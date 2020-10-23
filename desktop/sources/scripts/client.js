@@ -29,34 +29,15 @@ function Client () {
   this.clock = new Clock(this)
 
   // Ableton Link
-  this.link = new AbletonLink()
+  this.link = null
+  this.linkSync = null
+  this.currentBeat = null
+  this.currentPhase = null
+  this.quantum = null
+  this.beatIntervalId = null
+  this.linkSync = false
   this.numPeers = 0
-
-  this.link.setTempoCallback((newTempo) => {
-    console.log('Ableton Link', 'New Tempo', newTempo)
-    newTempo = this.link.getTempo(true)
-    if (this.clock.isLinkEnabled() && this.clock.speed.value != newTempo) {
-      this.clock.setSpeed(newTempo, newTempo, this.link.isPlaying())
-      this.update()
-    };
-  });
-  
-  this.link.setStartStopCallback((startStopState) => {
-    console.log('Ableton Link', startStopState ? 'Start' : 'Stop')
-    if (startStopState && this.clock.isPaused) {
-      this.clock.play(false, false, true)
-    } else if (!startStopState && !this.clock.isPaused) {
-      this.clock.stop(false)
-      this.clock.setFrame(0)
-      this.update()
-    }
-  });
-
-  this.link.setNumPeersCallback((newNumPeers) => {
-    console.log('Ableton Link', 'NumPeers: ' + newNumPeers)
-    this.numPeers = newNumPeers
-    this.update()
-  });
+  this.pausedFrames = 0
 
   // Settings
   this.scale = window.devicePixelRatio
@@ -193,24 +174,112 @@ function Client () {
     this.update()
   }
 
-  this.toggleLink = () => {
-    if (this.clock.isLinkEnabled()) {
-      console.log('Ableton Link Disabled')
-      this.link.disable()
-      this.link.disableStartStopSync()
-      this.clock.isPuppet = false
-      this.clock.puppetSource = null
-    } else if (!this.clock.isLinkEnabled() && !this.clock.isExternalClockActive()){
+  this.startLink = (sync) => {
+    this.link = new AbletonLink()
+    this.currentBeat = this.link.getBeat(true)
+    this.currentPhase = this.link.getPhase(true)
+    this.beatIntervalId = setInterval(() => {
+      let newBeat = this.link.getBeat(true)
+      if (newBeat == this.currentBeat + 1) {
+        console.log('LINK -- BEAT:', this.currentBeat, 'PHASE:, ',this.currentPhase)
+        this.updateFramesLink()
+        if (!this.linkSync && this.clock.isPaused) {
+          this.clock.setFrame(this.orca.f + 4)
+        }
+      }
+      this.currentBeat = newBeat
+      this.currentPhase = this.link.getPhase(true)
+      this.update()
+    })
+    this.clock.isPuppet = true
+    this.clock.puppetSource = sourceLink
+    this.linkSync = sync
+    if (this.linkSync) {
+      console.log('Ableton Link Enabled - Sync')
+      this.link.enableStartStopSync()
+      this.clock.setFrame(0)
+      this.update()
+    } else {
       console.log('Ableton Link Enabled')
       this.link.enable()
-      this.link.enableStartStopSync()
-      this.clock.setSpeed(this.link.getTempo(true), this.link.getTempo(true), true)
-      if (!this.link.isPlaying()) {
+    }
+    this.clock.setSpeed(this.link.getTempo(true), this.link.getTempo(true), false)
+    if (!this.link.isPlaying()) {
+      this.clock.stop(false)
+    }
+    this.quantum = this.link.getQuantum()
+
+    this.link.setTempoCallback((newTempo) => {
+      console.log('Ableton Link', 'New Tempo', newTempo)
+      this.changeLinkTempo(this.link.getTempo(true))
+    });
+    
+    this.link.setStartStopCallback((startStopState) => {
+      console.log('Ableton Link Sync', startStopState ? 'Start' : 'Stop')
+      if (startStopState && this.clock.isPaused) {
+        this.updateFramesLink()
+        this.clock.play(false, false, true)
+      } else if (!startStopState && !this.clock.isPaused) {
         this.clock.stop(false)
       }
-      this.clock.isPuppet = true
-      this.clock.puppetSource = sourceLink
-      console.log(this.clock.puppetSource)
+    });
+  
+    this.link.setNumPeersCallback((newNumPeers) => {
+      console.log('Ableton Link', 'NumPeers: ' + newNumPeers)
+      this.numPeers = newNumPeers
+      this.update()
+    });
+  }
+
+  this.changeLinkTempo = (newTempo) => {
+    this.updateFramesLink()
+    this.clock.setSpeed(newTempo, newTempo, !this.clock.isPaused)
+  }
+
+  this.updateFramesLink = () => {
+    let currentFrame = client.orca.f
+    if ((currentFrame % 4) != 0) {
+      this.clock.setFrame(currentFrame + (currentFrame % 4))
+      this.update()
+    }
+  }
+
+  this.stopLink = () => {
+    console.log('Ableton Link Disabled')
+    this.link.disable()
+    this.link.disableStartStopSync()
+    this.clock.isPuppet = false
+    this.clock.puppetSource = null
+    clearInterval(this.beatIntervalId)
+    this.beatIntervalId = null
+    this.currentBeat = null
+    this.currentPhase = null
+    this.numPeers = 0
+    this.link.removeNumPeersCallback()
+    this.link.removeStartStopCallback()
+    this.link.removeTempoCallback()
+    this.linkSync = null
+    this.link = null
+  }
+
+  this.toggleLinkSync = () => {
+    if (this.clock.isPuppet && this.clock.puppetSource == sourceLink) {
+      if (this.linkSync) {
+        this.link.disableStartStopSync()
+      } else {
+        this.link.enableStartStopSync()
+        this.clock.setFrame(0)
+        this.update()
+      }
+    }
+    this.linkSync = !this.linkSync
+  }
+
+  this.toggleLink = (sync) => {
+    if (this.clock.isLinkEnabled()) {
+      this.stopLink()
+    } else if (!this.clock.isLinkEnabled() && !this.clock.isExternalClockActive()){
+      this.startLink(sync)
     }
   }
 
@@ -377,8 +446,8 @@ function Client () {
     this.write(`${this.cursor.x},${this.cursor.y}${this.cursor.ins ? '+' : ''}`, this.grid.w * 1, this.orca.h, this.grid.w, this.cursor.ins ? 1 : 2)
     this.write(`${this.cursor.w}:${this.cursor.h}`, this.grid.w * 2, this.orca.h, this.grid.w)
     this.write(`${this.orca.f}f${this.clock.isPaused ? '~' : ''}`, this.grid.w * 3, this.orca.h, this.grid.w)
-    this.write(`${this.io.inspect(this.grid.w)}`, this.grid.w * 4, this.orca.h, this.grid.w - 1)
-    this.write(this.orca.f < 250 ? `< ${this.io.midi.toInputString()}` : '', this.grid.w * 5, this.orca.h, this.grid.w * 4)
+    this.write(`${this.io.inspect(this.grid.w)}`, this.grid.w * 5, this.orca.h, this.grid.w - 1)
+    this.write(this.orca.f < 250 ? `< ${this.io.midi.toInputString()}` : '', this.grid.w * 6, this.orca.h, this.grid.w * 4)
 
     if (this.commander.isActive === true) {
       this.write(`${this.commander.query}${this.orca.f % 2 === 0 ? '_' : ''}`, this.grid.w * 0, this.orca.h + 1, this.grid.w * 4)
@@ -389,10 +458,14 @@ function Client () {
         this.write(this.orca.f < 25 ? `ver${this.version}` : `${Object.keys(this.source.cache).length} mods`, this.grid.w * 0, this.orca.h + 1, this.grid.w)
       }
       this.write(`${this.orca.w}x${this.orca.h}`, this.grid.w * 1, this.orca.h + 1, this.grid.w)
-      this.write(`${this.grid.w}/${this.grid.h}${this.tile.w !== 10 ? ' ' + (this.tile.w / 10).toFixed(1) : ''}`, this.grid.w * 2, this.orca.h + 1, this.grid.w)
-      this.write(`${this.clock}`, this.grid.w * 3, this.orca.h + 1, this.grid.w, this.clock.isPuppet ? 3 : this.io.midi.isClock ? 11 : this.clock.isPaused ? 20 : 2)
-      this.write(`${display(Object.keys(this.orca.variables).join(''), this.orca.f, this.grid.w - 1)}`, this.grid.w * 4, this.orca.h + 1, this.grid.w - 1)
-      this.write(this.orca.f < 250 ? `> ${this.io.midi.toOutputString()}` : '', this.grid.w * 5, this.orca.h + 1, this.grid.w * 4)
+      if (this.clock.isLinkEnabled() && !this.linkSync) {
+        this.write(`${this.currentPhase + 1}/${this.quantum}`, this.grid.w * 2, this.orca.h + 1, this.grid.w)
+      } else {
+        this.write(`${this.grid.w}/${this.grid.h}${this.tile.w !== 10 ? ' ' + (this.tile.w / 10).toFixed(1) : ''}`, this.grid.w * 2, this.orca.h + 1, this.grid.w)
+      }
+      this.write(`${this.clock}`, this.grid.w * 3, this.orca.h + 1, this.grid.w * 2, this.clock.isPuppet ? 3 : this.io.midi.isClock ? 11 : this.clock.isPaused ? 20 : 2)
+      this.write(`${display(Object.keys(this.orca.variables).join(''), this.orca.f, this.grid.w - 1)}`, this.grid.w * 5, this.orca.h + 1, this.grid.w - 1)
+      this.write(this.orca.f < 250 ? `> ${this.io.midi.toOutputString()}` : '', this.grid.w * 6, this.orca.h + 1, this.grid.w * 4)
     }
   }
 

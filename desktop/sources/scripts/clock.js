@@ -34,19 +34,11 @@ function Clock (client) {
   }
 
   this.isLinkEnabled = function () {
-    if (this.isPuppet && this.puppetSource == 2) {
-      return true
-    } else {
-      return false
-    }
+    return this.isPuppet && this.puppetSource == sourceLink
   }
 
   this.isExternalClockActive = function () {
-    if (this.isPuppet && this.puppetSource == 1) {
-      return true
-    } else {
-      return false
-    }
+    return this.isPuppet && this.puppetSource == sourceClock
   }
 
   this.setSpeed = (value, target = null, setTimer = false) => {
@@ -54,15 +46,6 @@ function Clock (client) {
     if (value) { this.speed.value = clamp(value, 60, 300) }
     if (target) { this.speed.target = clamp(target, 60, 300) }
     if (setTimer === true) { this.setTimer(this.speed.value) }
-    if (this.isLinkEnabled()) { this.setFrame(0) }
-  }
-
-  this.setSpeedLink = (value) => {
-    client.link.setTempo(value)
-    if (!client.link.isPlaying()) {
-      this.setFrame(0)
-      client.update()
-    }
   }
 
   this.modSpeed = function (mod = 0, animate = false) {
@@ -78,11 +61,37 @@ function Clock (client) {
 
   this.togglePlay = function (msg = false) {
     if (this.isPaused === true) {
-      this.play(msg)
+      if (this.isLinkEnabled()) {
+        if (client.linkSync) {
+          this.setFrame(0)
+          this.play(msg)
+        } else {
+          this.linkPlayOnQuantum()
+        }
+      } else {
+        this.play(msg)
+      }
     } else {
       this.stop(msg)
     }
     client.update()
+  }
+
+  this.linkPlayOnQuantum = function () {
+    let currentFrame = client.orca.f
+    if ((currentFrame % 16) != 0) {
+      this.setFrame(currentFrame + (currentFrame % 16))
+      client.update()
+    }
+
+    let intervalId = setInterval(() => {
+      if (client.currentPhase == (client.quantum % 4)) {
+        console.warn('Clock', 'Ableton Link')
+        this.isPaused = false
+        this.setSpeed(this.speed.target, this.speed.target, true)
+        clearInterval(intervalId)
+      }
+    })
   }
 
   this.play = function (msg = false, midiStart = false, linkStart = false) {
@@ -115,7 +124,9 @@ function Clock (client) {
     } else if (this.isLinkEnabled()) {
       console.warn('Clock', 'Ableton Link')
       this.clearTimer()
-      client.link.stop()
+      if (client.linkSync) {
+        client.link.stop()
+      }
     } else {
       if (msg === true || client.io.midi.isClock) { client.io.midi.sendClockStop() }
       this.clearTimer()
@@ -200,7 +211,7 @@ function Clock (client) {
 
   this.getUIMessage = function (offset) {
     if (this.isLinkEnabled()) {
-      return `link${this.speed.value}`
+      return `link ${this.speed.value}${offset}`
     } else {
       return this.isExternalClockActive() ? 'midi' : `${this.speed.value}${offset}`
     }

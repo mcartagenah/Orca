@@ -43,24 +43,30 @@ function Commander (client) {
     play: (p) => { client.clock.play() },
     stop: (p) => { client.clock.stop() },
     run: (p) => { client.run() },
-    link: (p) => { client.toggleLink() },
+    // Ableton Link
+    link: (p) => { client.toggleLink(false) },
+    link_sync: (p) => {
+      if (client.clock.isLinkEnabled()) {
+        client.toggleLinkSync() 
+      } else {
+        client.toggleLink(true)
+      }
+    },
+    quantum: (p) => {
+      if (client.clock.isLinkEnabled()) {
+        // client.link.setQuantum(p.int)
+        client.quantum = p.int
+      }
+    },
     // Time
     apm: (p) => {
-      if (client.clock.isLinkEnabled()) {
-        client.clock.setSpeed(null, p.int)
-        client.clock.setSpeedLink(p.int)
-      } else {
+      if !(client.clock.isLinkEnabled()) {
         client.clock.setSpeed(null, p.int)
       }
     },
     bpm: (p) => {
       if (client.clock.isLinkEnabled()) {
-        if (client.link.isPlaying()) {
-          client.clock.setSpeed(p.int, p.int, true)  
-        } else {
-          client.clock.setSpeed(p.int, p.int, false)
-        }
-        client.clock.setSpeedLink(p.int)
+        client.link.setTempo(p.int)
       } else {
         client.clock.setSpeed(p.int, p.int, true)
       }

@@ -149,7 +149,13 @@ All commands have a shorthand equivalent to their first two characters, for exam
 - `midi:1;2` Set Midi output device to `#1`, and input device to `#2`.
 - `udp:1234;5678` Set UDP output port to `1234`, and input port to `5678`.
 - `osc:1234` Set OSC output port to `1234`.
+---
+#### Ableton Link (Experimental feature)
 - `link` Enables/Disables Ableton Link
+- `link_sync` Enables/Disables Ableton Link Start/Stop Sync
+- `quantum:8` Changes Ableton Link Quantum to `8`
+
+Currently supports start/stop sync and change bpm. Quantized launch is in beta (beat alignment is not consistent at the moment).
 
 ## Base36 Table
 
