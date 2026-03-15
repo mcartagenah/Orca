@@ -3,6 +3,7 @@ builds/
 .DS_Store
 */.DS_Store
 .vscode/
+PLAN.md
 
 # JUCE / C++ plugin build artifacts
 plugin/build/

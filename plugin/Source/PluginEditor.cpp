@@ -88,11 +88,18 @@ void GridComponent::paint(juce::Graphics& g) {
                    juce::Justification::centredLeft);
     }
 
-    // Line 2: grid_size
+    // Line 2: grid_size + groove info
     {
         g.setColour(fLow);
         juce::String line2;
         line2 << gridW << "x" << gridH;
+        if (processor.grooveLength > 1) {
+            line2 << "   groove:";
+            for (int i = 0; i < processor.grooveLength; i++) {
+                if (i > 0) line2 << ";";
+                line2 << (int)std::round(processor.grooves[i] * 50.0);
+            }
+        }
         g.drawText(line2, 4, (int)(statusY + 14), getWidth() - 8, 14,
                    juce::Justification::centredLeft);
     }
@@ -230,6 +237,64 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Cmd+S: save as
     if (cmd && code == 'S') {
         saveAs();
+        return true;
+    }
+
+    // Cmd+G: set groove
+    if (cmd && code == 'G') {
+        auto* aw = new juce::AlertWindow("Set Groove",
+            "Enter groove ratios (semicolon-separated, 50=normal).\n"
+            "Example: 75;25 for swing, 50 for straight.",
+            juce::AlertWindow::NoIcon);
+        // Pre-fill with current groove
+        juce::String currentGroove;
+        for (int i = 0; i < processor.grooveLength; i++) {
+            if (i > 0) currentGroove += ";";
+            currentGroove += juce::String((int)(processor.grooves[i] * 50.0));
+        }
+        aw->addTextEditor("groove", currentGroove, "Groove values:");
+        aw->addButton("OK", 1);
+        aw->addButton("Cancel", 0);
+        aw->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, aw](int result) {
+                if (result == 1) {
+                    auto text = aw->getTextEditorContents("groove");
+                    auto parts = juce::StringArray::fromTokens(text, ";", "");
+                    if (parts.size() > 0) {
+                        double ratios[OrcaProcessor::kMaxGrooveSlots];
+                        double sum = 0.0;
+                        int count = juce::jmin(parts.size(), (int)OrcaProcessor::kMaxGrooveSlots - 1);
+                        for (int i = 0; i < count; i++) {
+                            int v = parts[i].getIntValue();
+                            if (v == 0) v = 50;
+                            ratios[i] = v / 50.0;
+                            sum += ratios[i];
+                        }
+                        // Append closing ratio so the cycle averages to 1.0
+                        ratios[count] = (count + 1) - sum;
+                        count++;
+                        processor.setGroove(ratios, count);
+
+                        // Sync the DAW shuffle slider to match (centered: 100=straight)
+                        // swing = (pct-100)/100 * 0.98, so pct = swing/0.98 * 100 + 100
+                        if (count == 3) {
+                            double swing = ratios[0] - 1.0; // positive = swing, negative = inverse
+                            float pct = (float)(swing / 0.98 * 100.0 + 100.0);
+                            pct = juce::jlimit(0.0f, 200.0f, pct);
+                            processor.shuffleParam->setValueNotifyingHost(
+                                processor.shuffleParam->getNormalisableRange().convertTo0to1(pct));
+                            processor.lastShuffleValue = pct;
+                        } else {
+                            // Reset to center (straight)
+                            float center = 100.0f;
+                            processor.shuffleParam->setValueNotifyingHost(
+                                processor.shuffleParam->getNormalisableRange().convertTo0to1(center));
+                            processor.lastShuffleValue = center;
+                        }
+                    }
+                }
+                delete aw;
+            }), true);
         return true;
     }
 

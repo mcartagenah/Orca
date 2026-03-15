@@ -50,6 +50,17 @@ public:
     // Persisted editor window size
     int editorWidth = 800, editorHeight = 600;
 
+    // Groove/shuffle
+    static constexpr int kMaxGrooveSlots = 16;
+    double grooves[kMaxGrooveSlots] = { 1.0 };
+    int grooveLength = 1;
+    int grooveIndex = 0;  // current position in groove cycle (accumulator path)
+    void setGroove(const double* ratios, int count);
+
+    // DAW-exposed shuffle parameter (0-200%, 100=straight)
+    juce::AudioParameterFloat* shuffleParam = nullptr;
+    float lastShuffleValue = 100.0f; // track changes (default = center/straight)
+
 private:
     double currentSampleRate = 44100.0;
     int    currentBlockSize  = 512;
