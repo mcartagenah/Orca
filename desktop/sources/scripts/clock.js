@@ -3,7 +3,30 @@
 /* global Blob */
 
 function Clock (client) {
-  const workerScript = 'onmessage = (e) => { setInterval(() => { postMessage(true) }, e.data)}'
+  const workerScript = `
+    let state = { period: 250, grooves: [1], idx: 0, running: false }
+    function tick() {
+      postMessage(true)
+      state.idx = (state.idx + 1) % state.grooves.length
+      if (state.running) setTimeout(tick, state.period * state.grooves[state.idx])
+    }
+    onmessage = (e) => {
+      if (e.data.type === 'start') {
+        state.period = e.data.period
+        state.grooves = e.data.grooves || [1]
+        state.idx = 0
+        state.running = true
+        setTimeout(tick, state.period * state.grooves[0])
+      } else if (e.data.type === 'groove') {
+        state.grooves = e.data.grooves
+        state.idx = state.idx % state.grooves.length
+      } else if (e.data.type === 'speed') {
+        state.period = e.data.period
+      } else if (e.data.type === 'stop') {
+        state.running = false
+      }
+    }
+  `
   const worker = window.URL.createObjectURL(new Blob([workerScript], { type: 'text/javascript' }))
 
   this.isPaused = true
@@ -11,10 +34,16 @@ function Clock (client) {
   this.isPuppet = false
 
   this.speed = { value: 120, target: 120 }
+  this.grooves = [1]
+  this.beatDivisions = 4
 
   this.start = function () {
     const memory = parseInt(window.localStorage.getItem('bpm'))
     const target = memory >= 60 ? memory : 120
+    try {
+      const savedGrooves = JSON.parse(window.localStorage.getItem('grooves'))
+      if (Array.isArray(savedGrooves) && savedGrooves.length > 0) { this.grooves = savedGrooves }
+    } catch (e) {}
     this.setSpeed(target, target, true)
     this.play()
   }
@@ -137,15 +166,30 @@ function Clock (client) {
     this.clearTimer()
     window.localStorage.setItem('bpm', bpm)
     this.timer = new Worker(worker)
-    this.timer.postMessage((60000 / parseInt(bpm)) / 4)
+    this.timer.postMessage({ type: 'start', period: (60000 / parseInt(bpm)) / this.beatDivisions, grooves: this.grooves })
     this.timer.onmessage = (event) => {
       client.io.midi.sendClock()
       client.run()
     }
   }
 
+  this.setGroove = function (grooves) {
+    this.grooves = grooves
+    window.localStorage.setItem('grooves', JSON.stringify(grooves))
+    if (this.timer) {
+      this.timer.postMessage({ type: 'groove', grooves: this.grooves })
+    }
+  }
+
+  this.sendSpeed = function (bpm) {
+    if (this.timer) {
+      this.timer.postMessage({ type: 'speed', period: (60000 / parseInt(bpm)) / this.beatDivisions })
+    }
+  }
+
   this.clearTimer = function () {
     if (this.timer) {
+      this.timer.postMessage({ type: 'stop' })
       this.timer.terminate()
     }
     this.timer = null
@@ -163,7 +207,8 @@ function Clock (client) {
     const _offset = Math.abs(diff) > 5 ? (diff > 0 ? `+${diff}` : diff) : ''
     const _message = this.isPuppet === true ? 'midi' : `${this.speed.value}${_offset}`
     const _beat = diff === 0 && client.orca.f % 4 === 0 ? '*' : ''
-    return `${_message}${_beat}`
+    const _groove = this.grooves.length > 1 ? ' gr' : ''
+    return `${_message}${_beat}${_groove}`
   }
 
   function clamp (v, min, max) { return v < min ? min : v > max ? max : v }

@@ -49,6 +49,16 @@ function Commander (client) {
     frame: (p) => { client.clock.setFrame(p.int) },
     rewind: (p) => { client.clock.setFrame(client.orca.f - p.int) },
     skip: (p) => { client.clock.setFrame(client.orca.f + p.int) },
+    groove: (p) => {
+      let sum = 0
+      const grooves = p.ints.map((v, i) => {
+        if (v === 0) { v = (i + 1) * 50 - sum * 50 }
+        sum += v / 50.0
+        return v / 50.0
+      })
+      grooves.push(p.ints.length + 1 - sum)
+      client.clock.setGroove(grooves)
+    },
     time: (p, origin) => {
       const formatted = new Date(250 * (client.orca.f * (60 / client.clock.speed.value))).toISOString().substr(14, 5).replace(/:/g, '')
       client.orca.writeBlock(origin ? origin.x : client.cursor.x, origin ? origin.y : client.cursor.y, `${formatted}`)
