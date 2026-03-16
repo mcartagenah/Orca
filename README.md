@@ -16,14 +16,54 @@ If you need **help**, visit the [chatroom](https://discord.gg/F7W98pXKd7), the [
 
 ## Install & Run
 
+### Desktop (Electron)
+
 If you wish to use Orca inside of [Electron](https://electronjs.org/), follow these steps:
 
 ```
-git clone https://github.com/hundredrabbits/Orca.git
+git clone https://github.com/mcartagenah/Orca.git
 cd Orca/desktop/
 npm install
 npm start
 ```
+
+### Plugin (AU/VST3)
+
+Orca is also available as an **AU/VST3 plugin** for use inside DAWs like Ableton Live, Logic Pro, etc. The plugin uses a native C++ engine and creates a virtual MIDI port named "Orca".
+
+```
+git clone https://github.com/mcartagenah/Orca.git
+cd Orca/plugin/
+make all
+```
+
+This builds and installs both the AU (`~/Library/Audio/Plug-Ins/Components/`) and VST3 (`~/Library/Audio/Plug-Ins/VST3/`) versions. macOS only.
+
+#### Plugin Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+O` | Open .orca file |
+| `Cmd+S` | Save as .orca file |
+| `Cmd+G` | Set groove ratios |
+| `Cmd+=` | Zoom in |
+| `Cmd+-` | Zoom out |
+| `Cmd+Z` | Undo |
+| `Cmd+Shift+Z` | Redo |
+| Arrow keys | Move cursor |
+| `Shift+Arrows` | Expand selection |
+| `Cmd+C/V/X` | Copy/Paste/Cut |
+| `Backspace` | Delete selected cells |
+
+#### Plugin Parameters
+
+- **Shuffle** (0-200%): DAW-automatable swing parameter. 0% = max inverse swing, 100% = straight, 200% = max swing.
+
+#### MIDI Output
+
+The plugin sends MIDI in two ways:
+1. **Host MIDI bus**: Routed through the DAW's MIDI output (for instrument chains).
+2. **Virtual MIDI port "Orca"**: Available system-wide to any application listening for MIDI input.
 
 <img src='https://raw.githubusercontent.com/hundredrabbits/Orca/master/resources/preview.jpg' width="600"/>
 
@@ -69,6 +109,21 @@ To display the list of operators inside of Orca, use `CmdOrCtrl+G`.
 - `;` **udp**: Sends UDP message.
 - `=` **osc**(*path*): Sends OSC message.
 - `$` **self**: Sends [ORCA command](#Commands).
+
+### Generative
+
+- `~` **probability**(chance): Bangs with probability (0=never, z=always).
+- `^` **scale**(*note* scale): Quantizes value to musical scale (0=chromatic, 1=major, 2=minor, 3=pentatonic, 4=blues, 5=dorian, 6=mixolydian, 7=harmonic minor).
+- `{` **buffer**(*len* val): Shift register — on bang, shifts south row right and inserts value at position 0.
+- `}` **freeze**(*val*): Sample and hold — on bang, captures input; otherwise holds previous value.
+- `|` **gate**(*threshold* val): Passes value southward if >= threshold, otherwise outputs `.`.
+- `&` **arp**(*speed* *pattern* len notes...): Arpeggiator — cycles through eastward notes (0=up, 1=down, 2=updown, 3=random).
+- `@` **markov**(len states...): State machine — on bang, uses current state as index into eastward cells to determine next state.
+- `[` **strum**(len rate): On bang, outputs sequential `*` bangs southward — one per `rate` frames. Len controls how many bangs, rate controls frames between each bang. Uses 2 state cells (position, rate countdown) then len output cells below.
+- `]` **chord**(root type): Outputs chord notes southward. Root is a note letter (uppercase=natural, lowercase=sharp, e.g. C=C, c=C#). Types: 0=major, 1=minor, 2=dim, 3=aug, 4=sus2, 5=sus4, 6=maj7, 7=min7, 8=dom7.
+- `>` **humanize**(max): On bang, delays the output bang by a random 0-max frames. State stored in south cell, bang output one cell below.
+- `<` **ratchet**(subdivisions period): On bang, outputs N evenly-spaced bangs over the given period of frames. State stored in south cell, bang output one cell below.
+- `\` **swing**(delay): Alternates between immediate and delayed bangs. Odd bangs pass through instantly, even bangs are delayed by N frames. Uses 3 south cells (toggle, countdown, output).
 
 ## MIDI
 
@@ -151,6 +206,41 @@ All commands have a shorthand equivalent to their first two characters, for exam
 - `midi:1;2` Set Midi output device to `#1`, and input device to `#2`.
 - `udp:1234;5678` Set UDP output port to `1234`, and input port to `5678`.
 - `osc:1234` Set OSC output port to `1234`.
+- `groove:75;25` Set groove ratios (see [Groove](#groove)).
+
+## Groove
+
+Orca supports **groove/shuffle** to create swing and humanized timing. Groove works by varying the duration of each tick in a repeating cycle.
+
+### Ratios
+
+Groove ratios use **50 as the baseline** (1.0x normal speed):
+
+| Value | Ratio | Effect |
+|-------|-------|--------|
+| 25 | 0.5x | Half duration (faster tick) |
+| 50 | 1.0x | Normal timing |
+| 75 | 1.5x | 1.5x duration (slower tick) |
+| 99 | ~2.0x | Near-double duration |
+
+### Examples
+
+- `groove:75;25` — Classic swing. Long-short-balanced cycle.
+- `groove:25;75` — Inverse swing. Short-long-balanced cycle.
+- `groove:50` — Straight timing (reset to normal).
+
+A **closing ratio** is automatically appended to balance the cycle, so the average tempo stays the same. For example, `groove:75;25` becomes `[75, 25, 50]` internally — a 3-step cycle.
+
+### Desktop (Electron)
+
+Use the command prompt (`CmdOrCtrl+K`) and type `groove:75;25`.
+
+### Plugin (AU/VST3)
+
+- **Cmd+G**: Opens a dialog to enter groove ratios manually (e.g. `75;25`).
+- **Shuffle slider**: A DAW-automatable parameter (0-200%) that maps to a 3-step groove. 0% = max inverse swing, 100% = straight, 200% = max swing.
+
+The current groove is displayed in the status bar as `groove:75;25;50`.
 
 ## Base36 Table
 

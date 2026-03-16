@@ -45,6 +45,7 @@ void Grid::load(int newW, int newH, const char* s, int frame) {
 }
 
 void Grid::run() {
+    release();
     parse();
     operate();
     f++;
@@ -188,15 +189,24 @@ void Grid::parse() {
             if (runtimeCount >= kMaxOperators) break;
 
             bool isPassive = isUpper(g) || isSpecial(g);
-            if (createOperator(runtime[runtimeCount], g, x, y, isPassive)) {
+            if (createOperator(runtime[runtimeCount], g, x, y, isPassive, *this)) {
                 runtimeCount++;
             }
         }
     }
+    // Remove operators whose cells were locked during parse
+    // (e.g. chord ] locks its west input cells to prevent them being operators)
+    int writeIdx = 0;
+    for (int i = 0; i < runtimeCount; i++) {
+        if (!lockAt(runtime[i].x, runtime[i].y)) {
+            if (writeIdx != i) runtime[writeIdx] = runtime[i];
+            writeIdx++;
+        }
+    }
+    runtimeCount = writeIdx;
 }
 
 void Grid::operate() {
-    release();
     for (int i = 0; i < runtimeCount; i++) {
         auto& op = runtime[i];
         if (lockAt(op.x, op.y)) continue;
