@@ -13,6 +13,8 @@ enum class OpType : uint8_t {
     N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
     Bang, Comment,
     Midi, CC, PitchBend, Mono, Osc, Udp, Self,
+    Probability, Scale, Buffer, Freeze, Gate, Arp, Markov, Chord,
+    Humanize, Ratchet, SwingGate, Strum,
     Null, // digit placeholders
     Count
 };
@@ -53,7 +55,8 @@ struct OperatorInstance {
 };
 
 // Factory: create operator from glyph
-bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassive);
+struct Grid;
+bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassive, Grid& grid);
 
 // Check if a glyph is a known operator
 bool isOperatorGlyph(char g);

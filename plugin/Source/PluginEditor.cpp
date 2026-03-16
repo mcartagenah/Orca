@@ -601,6 +601,15 @@ const char* GridComponent::operatorName(char glyph) {
         case '?': return "pb";        case '%': return "mono";
         case '=': return "osc";       case ';': return "udp";
         case '*': return "bang";      case '#': return "comment";
+        case '~': return "probability"; case '^': return "scale";
+        case '{': return "buffer";  case '}': return "freeze";
+        case '|': return "gate";    case '&': return "arp";
+        case '@': return "markov";
+        case '[': return "strum";
+        case ']': return "chord";
+        case '>': return "humanize";
+        case '<': return "ratchet";
+        case '\\': return "swing";
         default:  return "empty";
     }
 }
@@ -726,6 +735,86 @@ const char* GridComponent::portName(char ownerGlyph, int portIdx) {
         switch (portIdx) {
             case 0: return "input";  case 1: return "output";
         }
+    }
+
+    // Probability: ~
+    if (ownerGlyph == '~') {
+        switch (portIdx) {
+            case 0: return "chance";  case 1: return "output";
+        }
+    }
+
+    // Scale: ^
+    if (ownerGlyph == '^') {
+        switch (portIdx) {
+            case 0: return "note";  case 1: return "scale";  case 2: return "output";
+        }
+    }
+
+    // Buffer: {
+    if (ownerGlyph == '{') {
+        switch (portIdx) {
+            case 0: return "len";  case 1: return "value";
+        }
+    }
+
+    // Freeze: }
+    if (ownerGlyph == '}') {
+        switch (portIdx) {
+            case 0: return "value";  case 1: return "output";
+        }
+    }
+
+    // Gate: |
+    if (ownerGlyph == '|') {
+        switch (portIdx) {
+            case 0: return "threshold";  case 1: return "value";  case 2: return "output";
+        }
+    }
+
+    // Arp: &
+    if (ownerGlyph == '&') {
+        switch (portIdx) {
+            case 0: return "speed";  case 1: return "pattern";  case 2: return "len";
+        }
+    }
+
+    // Markov: @
+    if (ownerGlyph == '@') {
+        switch (portIdx) {
+            case 0: return "len";  case 1: return "output";
+        }
+    }
+
+    // Strum: [
+    if (ownerGlyph == '[') {
+        switch (portIdx) {
+            case 0: return "len";  case 1: return "rate";
+        }
+    }
+
+    // Chord: ]
+    if (ownerGlyph == ']') {
+        switch (portIdx) {
+            case 0: return "root";  case 1: return "type";
+        }
+    }
+
+    // Humanize: >
+    if (ownerGlyph == '>') {
+        if (portIdx == 0) return "max";
+    }
+
+    // Ratchet: <
+    if (ownerGlyph == '<') {
+        switch (portIdx) {
+            case 0: return "subdivisions";  case 1: return "period";
+        }
+    }
+
+    // Swing: backslash
+    if (ownerGlyph == '\\') {
+        if (portIdx == 0) return "delay";
     }
 
     return "";

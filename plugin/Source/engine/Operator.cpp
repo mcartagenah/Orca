@@ -583,6 +583,412 @@ void OperatorInstance::operation(Grid& grid, EngineIO& io, bool force,
         break;
     }
 
+    case OpType::Probability: { // ~
+        // Check for bang neighbor excluding south (output port) to avoid self-triggering
+        bool hasBangInput = (grid.glyphAt(x - 1, y) == '*') ||
+                            (grid.glyphAt(x + 1, y) == '*') ||
+                            (grid.glyphAt(x, y - 1) == '*');
+        if (!hasBangInput && !force) {
+            result = 0;
+            hasResult = true;
+            break;
+        }
+        int chance = static_cast<int>(listen(grid, ports[0], true));
+        int roll = std::rand() % 36;
+        result = (roll <= chance) ? 1 : 0;
+        hasResult = true;
+        break;
+    }
+
+    case OpType::Scale: { // ^
+        static const int scaleSizes[8] = { 12, 7, 7, 5, 6, 7, 7, 7 };
+        static const int scales[8][12] = {
+            {0,1,2,3,4,5,6,7,8,9,10,11}, // chromatic
+            {0,2,4,5,7,9,11,0,0,0,0,0},  // major
+            {0,2,3,5,7,8,10,0,0,0,0,0},  // minor
+            {0,2,4,7,9,0,0,0,0,0,0,0},   // pentatonic
+            {0,3,5,6,7,10,0,0,0,0,0,0},  // blues
+            {0,2,3,5,7,9,10,0,0,0,0,0},  // dorian
+            {0,2,4,5,7,9,10,0,0,0,0,0},  // mixolydian
+            {0,2,3,5,7,8,11,0,0,0,0,0},  // harmonic minor
+        };
+        int noteVal = static_cast<int>(listen(grid, ports[0], true));
+        int scaleId = static_cast<int>(listen(grid, ports[1], true));
+        if (scaleId > 7) scaleId = 7;
+        int octave = noteVal / 12;
+        int semitone = noteVal % 12;
+        int bestDist = 99, bestNote = 0;
+        for (int i = 0; i < scaleSizes[scaleId]; i++) {
+            int dist = std::abs(semitone - scales[scaleId][i]);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestNote = scales[scaleId][i];
+            }
+        }
+        result = keyOf(octave * 12 + bestNote);
+        hasResult = true;
+        break;
+    }
+
+    case OpType::Buffer: { // {
+        int len = static_cast<int>(listen(grid, ports[0], true));
+        if (len <= 0) break;
+        char newVal = listen(grid, ports[1], false);
+        bool banged = hasNeighbor(grid, '*');
+
+        // Read current south row
+        char buf[36];
+        for (int i = 0; i < len && i < 36; i++) {
+            buf[i] = grid.glyphAt(x + i, y + 1);
+        }
+
+        if (banged) {
+            // Shift right and insert new value at [0]
+            for (int i = len - 1; i > 0; i--) {
+                int outIdx = 2 + i;
+                if (outIdx >= kMaxPorts) break;
+                addPort(outIdx, i, 1, true);
+                output(grid, buf[i - 1], ports[outIdx]);
+            }
+            // Position 0 gets new value
+            addPort(2, 0, 1, true);
+            output(grid, newVal, ports[2]);
+        }
+        // Lock south row
+        for (int i = 0; i < len && i < 36; i++) {
+            grid.lock(x + i, y + 1);
+        }
+        break;
+    }
+
+    case OpType::Freeze: { // }
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+        if (hasBang) {
+            result = listen(grid, ports[0], false);  // capture west
+        } else {
+            result = listen(grid, ports[1], false);  // re-read output (hold)
+        }
+        hasResult = true;
+        break;
+    }
+
+    case OpType::Gate: { // |
+        int threshold = static_cast<int>(listen(grid, ports[0], true));
+        int val = static_cast<int>(listen(grid, ports[1], true));
+        char rawVal = listen(grid, ports[1], false);
+        result = (val >= threshold) ? rawVal : '.';
+        hasResult = true;
+        break;
+    }
+
+    case OpType::Arp: { // &
+        int speed = static_cast<int>(listen(grid, ports[0], true));
+        int pattern = static_cast<int>(listen(grid, ports[1], true));
+        int len = static_cast<int>(listen(grid, ports[2], true));
+        if (speed == 0) speed = 1;
+        if (len <= 0) break;
+
+        // Read and lock notes eastward
+        char notes[36];
+        for (int i = 0; i < len && i < 36; i++) {
+            notes[i] = grid.glyphAt(x + 2 + i, y);
+            grid.lock(x + 2 + i, y);
+            // Create dynamic input ports for display
+            int inIdx = 3 + i;
+            if (inIdx < kMaxPorts)
+                addPort(inIdx, 2 + i, 0, false);
+        }
+
+        int step = grid.f / speed;
+        int index = 0;
+        switch (pattern) {
+            case 0: index = step % len; break;  // up
+            case 1: index = (len - 1) - (step % len); break;  // down
+            case 2: { // updown
+                int cycle = len > 1 ? 2 * (len - 1) : 1;
+                int pos = step % cycle;
+                index = pos < len ? pos : cycle - pos;
+                break;
+            }
+            default: index = std::rand() % len; break;  // random
+        }
+
+        // Output port
+        int outIdx = 3 + len;
+        if (outIdx < kMaxPorts) {
+            addPort(outIdx, 0, 1, true, false, false, true);
+            outputPortIdx = outIdx;
+            result = notes[index];
+            hasResult = true;
+        }
+        break;
+    }
+
+    case OpType::Markov: { // @
+        int len = static_cast<int>(listen(grid, ports[0], true));
+        if (len <= 0) break;
+
+        // Lock state table eastward
+        for (int i = 0; i < len && i < 36; i++) {
+            grid.lock(x + 2 + i, y);
+            int inIdx = 2 + i;
+            if (inIdx < kMaxPorts)
+                addPort(inIdx, 2 + i, 0, false);
+        }
+
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+        if (hasBang) {
+            // Read current output state
+            int state = static_cast<int>(listen(grid, ports[1], true));
+            // Use state as index into eastward cells
+            int idx = state % len;
+            char next = grid.glyphAt(x + 2 + idx, y);
+            result = (next == '.') ? keyOf(0) : next;
+        } else {
+            // Hold current state
+            result = listen(grid, ports[1], false);
+        }
+        hasResult = true;
+        break;
+    }
+
+    case OpType::Chord: { // ]
+        // Chord intervals in semitones
+        static const int chordSizes[9] = { 3, 3, 3, 3, 3, 3, 4, 4, 4 };
+        static const int chords[9][4] = {
+            {0, 4, 7, 0},   // 0 = major
+            {0, 3, 7, 0},   // 1 = minor
+            {0, 3, 6, 0},   // 2 = dim
+            {0, 4, 8, 0},   // 3 = aug
+            {0, 2, 7, 0},   // 4 = sus2
+            {0, 5, 7, 0},   // 5 = sus4
+            {0, 4, 7, 11},  // 6 = maj7
+            {0, 3, 7, 10},  // 7 = min7
+            {0, 4, 7, 10},  // 8 = dom7
+        };
+        // Note letter to semitone: A=9 a=10 B=11 b=0 C=0 c=1 D=2 d=3 E=4 e=5 F=5 f=6 G=7 g=8
+        // Letters cycle every 7: H=A, I=B, etc.
+        static const int naturalSemitones[7] = { 9, 11, 0, 2, 4, 5, 7 }; // A B C D E F G
+        // Semitone to note character (canonical mapping)
+        static const char semitoneToNote[12] = {
+            'C', 'c', 'D', 'd', 'E', 'F', 'f', 'G', 'g', 'A', 'a', 'B'
+        };
+
+        // Always lock up to 4 output cells south to prevent note letters
+        // from being interpreted as operators (holds last chord on invalid input)
+        for (int i = 0; i < 4; i++) {
+            grid.lock(x, y + 1 + i);
+        }
+
+        char rootGlyph = listen(grid, ports[0], false);
+        if (!isLetter(rootGlyph)) break; // hold last chord (cells already locked)
+
+        int chordType = static_cast<int>(listen(grid, ports[1], true));
+        if (chordType > 8) chordType = 8;
+        int size = chordSizes[chordType];
+
+        // Convert root letter to semitone
+        int baseIdx = (toLower(rootGlyph) - 'a') % 7;
+        int rootSemitone = naturalSemitones[baseIdx];
+        if (!isUpper(rootGlyph)) rootSemitone = (rootSemitone + 1) % 12; // lowercase = sharp
+
+        // Write chord notes southward
+        for (int i = 0; i < size; i++) {
+            int outIdx = 2 + i;
+            if (outIdx >= kMaxPorts) break;
+            addPort(outIdx, 0, 1 + i, true);
+            int semitone = (rootSemitone + chords[chordType][i]) % 12;
+            output(grid, semitoneToNote[semitone], ports[outIdx]);
+        }
+        // Clear unused cells (e.g., switching from 7th chord to triad)
+        for (int i = size; i < 4; i++) {
+            grid.write(x, y + 1 + i, '.');
+        }
+        break;
+    }
+
+    case OpType::Humanize: { // >
+        // Lock south cells (counter + output)
+        grid.lock(x, y + 1);
+        grid.lock(x, y + 2);
+
+        int maxDelay = static_cast<int>(listen(grid, ports[0], true));
+        int counter = static_cast<int>(listenAt(grid, 0, 1, true)); // read counter from south cell
+
+        // Check for bang neighbor excluding south cells
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+
+        if (hasBang && counter == 0) {
+            // New bang: pick random delay 0..maxDelay
+            counter = std::rand() % (maxDelay + 1);
+            if (counter == 0) {
+                // Immediate bang
+                grid.write(x, y + 1, '.');
+                grid.write(x, y + 2, '*');
+            } else {
+                grid.write(x, y + 1, keyOf(counter));
+                grid.write(x, y + 2, '.');
+            }
+        } else if (counter > 0) {
+            counter--;
+            if (counter == 0) {
+                // Countdown finished — output bang
+                grid.write(x, y + 1, keyOf(0));
+                grid.write(x, y + 2, '*');
+            } else {
+                grid.write(x, y + 1, keyOf(counter));
+                grid.write(x, y + 2, '.');
+            }
+        } else {
+            // Idle
+            grid.write(x, y + 1, '.');
+            grid.write(x, y + 2, '.');
+        }
+        break;
+    }
+
+    case OpType::Ratchet: { // <
+        // Lock south cells (counter + output)
+        grid.lock(x, y + 1);
+        grid.lock(x, y + 2);
+
+        int subs = static_cast<int>(listen(grid, ports[0], true));
+        int period = static_cast<int>(listen(grid, ports[1], true));
+        int counter = static_cast<int>(listenAt(grid, 0, 1, true)); // read counter from south cell
+
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+
+        if (hasBang && counter == 0) {
+            counter = period; // start ratchet
+        }
+
+        if (counter > 0) {
+            int pos = period - counter;
+            // Bang at evenly spaced positions within the period
+            bool shouldBang = false;
+            if (pos == 0) {
+                shouldBang = true;
+            } else if (subs > 0 && period > 0) {
+                int prevSlot = (pos - 1) * subs / period;
+                int curSlot = pos * subs / period;
+                shouldBang = (curSlot != prevSlot);
+            }
+
+            counter--;
+            grid.write(x, y + 1, counter > 0 ? keyOf(counter) : keyOf(0));
+            grid.write(x, y + 2, shouldBang ? '*' : '.');
+        } else {
+            grid.write(x, y + 1, '.');
+            grid.write(x, y + 2, '.');
+        }
+        break;
+    }
+
+    case OpType::SwingGate: { // backslash
+        // Lock south cells (toggle + countdown + output)
+        grid.lock(x, y + 1);
+        grid.lock(x, y + 2);
+        grid.lock(x, y + 3);
+
+        int delay = static_cast<int>(listen(grid, ports[0], true));
+        int toggle = static_cast<int>(listenAt(grid, 0, 1, true));   // read toggle from south cell
+        int countdown = static_cast<int>(listenAt(grid, 0, 2, true)); // read countdown from south+1 cell
+
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+
+        bool bangOut = false;
+
+        if (hasBang && countdown == 0) {
+            toggle = toggle ? 0 : 1; // flip 0/1
+            if (toggle == 1) {
+                // First bang: pass through immediately
+                bangOut = true;
+            } else {
+                // Second bang: delay by N frames
+                if (delay == 0) {
+                    bangOut = true; // no delay = immediate
+                } else {
+                    countdown = delay;
+                }
+            }
+        }
+
+        if (countdown > 0 && !bangOut) {
+            countdown--;
+            if (countdown == 0) {
+                bangOut = true;
+            }
+        }
+
+        grid.write(x, y + 1, keyOf(toggle));
+        grid.write(x, y + 2, countdown > 0 ? keyOf(countdown) : keyOf(0));
+        grid.write(x, y + 3, bangOut ? '*' : '.');
+        break;
+    }
+
+    case OpType::Strum: { // [
+        int len = static_cast<int>(listen(grid, ports[0], true));
+        int rate = static_cast<int>(listen(grid, ports[1], true));
+        if (len <= 0) break;
+        if (rate <= 0) rate = 1;
+
+        // Lock state cells (position counter + rate countdown)
+        grid.lock(x, y + 1);
+        grid.lock(x, y + 2);
+        // Lock output cells
+        for (int i = 0; i < len; i++) grid.lock(x, y + 3 + i);
+
+        int position = static_cast<int>(listenAt(grid, 0, 1, true));
+        int rateCount = static_cast<int>(listenAt(grid, 0, 2, true));
+
+        bool hasBang = (grid.glyphAt(x - 1, y) == '*') ||
+                       (grid.glyphAt(x + 1, y) == '*') ||
+                       (grid.glyphAt(x, y - 1) == '*');
+
+        if (hasBang && position == 0) {
+            position = len;
+            rateCount = 1; // bang immediately on first frame
+        }
+
+        if (position > 0) {
+            rateCount--;
+            if (rateCount <= 0) {
+                // Bang at current position
+                int activePos = len - position;
+                for (int i = 0; i < len; i++) {
+                    grid.write(x, y + 3 + i, (i == activePos) ? '*' : '.');
+                }
+                position--;
+                rateCount = rate; // reset rate countdown
+            } else {
+                // Between bangs — all dots
+                for (int i = 0; i < len; i++) {
+                    grid.write(x, y + 3 + i, '.');
+                }
+            }
+            grid.write(x, y + 1, position > 0 ? keyOf(position) : keyOf(0));
+            grid.write(x, y + 2, rateCount > 0 ? keyOf(rateCount) : keyOf(0));
+        } else {
+            // Idle
+            grid.write(x, y + 1, '.');
+            grid.write(x, y + 2, '.');
+            for (int i = 0; i < len; i++) {
+                grid.write(x, y + 3 + i, '.');
+            }
+        }
+        break;
+    }
+
     case OpType::Null:
         break;
 
@@ -600,14 +1006,16 @@ bool isOperatorGlyph(char g) {
     switch (g) {
         case '*': case '#': case ':': case '!':
         case '?': case '%': case '=': case ';':
-        case '$':
+        case '$': case '~': case '^': case '{':
+        case '}': case '|': case '&': case '@':
+        case '[': case ']': case '>': case '<': case '\\':
             return true;
         default:
             return false;
     }
 }
 
-bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassive) {
+bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassive, Grid& grid) {
     char lower = toLower(glyph);
     op.portCount = 0;
     op.outputPortIdx = -1;
@@ -839,6 +1247,85 @@ bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassi
 
     case '$':
         op.init(OpType::Self, x, y, '$', true);
+        return true;
+
+    case '~':
+        op.init(OpType::Probability, x, y, '~', true);
+        op.addPort(0, 1, 0, false, false, false, false, 0, 0, 35); // chance
+        op.addPort(1, 0, 1, true, true); // bang output
+        return true;
+
+    case '^':
+        op.init(OpType::Scale, x, y, '^', true);
+        op.addPort(0, -1, 0);  // note input
+        op.addPort(1, 1, 0, false, false, false, false, 0, 0, 7); // scale id
+        op.addPort(2, 0, 1, true, false, false, true);  // output (sensitive)
+        return true;
+
+    case '{':
+        op.init(OpType::Buffer, x, y, '{', true);
+        op.addPort(0, -1, 0, false, false, false, false, 0, 1, 36); // len
+        op.addPort(1, 1, 0);  // value to push
+        return true;
+
+    case '}':
+        op.init(OpType::Freeze, x, y, '}', true);
+        op.addPort(0, -1, 0);  // value input
+        op.addPort(1, 0, 1, true, false, true, true);  // output (reader, sensitive)
+        return true;
+
+    case '|':
+        op.init(OpType::Gate, x, y, '|', true);
+        op.addPort(0, -1, 0);  // threshold
+        op.addPort(1, 1, 0);   // value
+        op.addPort(2, 0, 1, true, false, false, true);  // output (sensitive)
+        return true;
+
+    case '&':
+        op.init(OpType::Arp, x, y, '&', true);
+        op.addPort(0, -2, 0, false, false, false, false, 0, 1, 36); // speed
+        op.addPort(1, -1, 0, false, false, false, false, 0, 0, 3);  // pattern
+        op.addPort(2, 1, 0, false, false, false, false, 0, 1, 36);  // len
+        return true;
+
+    case '@':
+        op.init(OpType::Markov, x, y, '@', true);
+        op.addPort(0, 1, 0, false, false, false, false, 0, 1, 36); // len
+        op.addPort(1, 0, 1, true, false, true, true);  // output (reader, sensitive)
+        return true;
+
+    case '[':
+        op.init(OpType::Strum, x, y, '[', true);
+        op.addPort(0, -1, 0, false, false, false, false, 0, 1, 35);  // len (west, clamp 1-35)
+        op.addPort(1, 1, 0, false, false, false, false, '1', 1, 35); // rate (east, default 1, clamp 1-35)
+        return true;
+
+    case ']':
+        op.init(OpType::Chord, x, y, ']', true);
+        op.addPort(0, -1, 0);  // root note (west)
+        op.addPort(1, -2, 0, false, false, false, false, 0, 0, 8);  // chord type (west-2, clamp 0-8)
+        grid.lock(x - 1, y);  // prevent root from being treated as operator
+        grid.lock(x - 2, y);  // prevent type from being treated as operator
+        // output ports created dynamically in operation()
+        return true;
+
+    case '>':
+        op.init(OpType::Humanize, x, y, '>', true);
+        op.addPort(0, 1, 0, false, false, false, false, 0, 0, 35);  // max delay (east)
+        // state cells (counter, bang output) at (0,1) and (0,2) managed directly in operation()
+        return true;
+
+    case '<':
+        op.init(OpType::Ratchet, x, y, '<', true);
+        op.addPort(0, 1, 0, false, false, false, false, 0, 1, 9);   // subdivisions (east, clamp 1-9)
+        op.addPort(1, 2, 0, false, false, false, false, 0, 1, 36);  // period (east+1, clamp 1-36)
+        // state cells (counter, bang output) at (0,1) and (0,2) managed directly in operation()
+        return true;
+
+    case '\\':
+        op.init(OpType::SwingGate, x, y, '\\', true);
+        op.addPort(0, 1, 0, false, false, false, false, 0, 0, 35);  // delay (east)
+        // state cells (toggle, countdown, bang output) at (0,1)-(0,3) managed directly in operation()
         return true;
     }
 
