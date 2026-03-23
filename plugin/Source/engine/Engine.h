@@ -3,6 +3,7 @@
 #include "Grid.h"
 #include "Operator.h"
 #include "EngineIO.h"
+#include "LifeGrid.h"
 #include <cstdlib>
 #include <ctime>
 
@@ -12,6 +13,10 @@ class Engine {
 public:
     Grid grid;
     EngineIO io;
+    LifeGrid lifeGrid;
+    bool lifeMode = false;
+    uint8_t paintChannel = 0;
+    uint8_t paintOctave = 3;
 
     // Shadow buffer for thread-safe UI reads
     char shadowCells[kMaxGridSize];
@@ -21,6 +26,7 @@ public:
     char shadowPortOwner[kMaxGridSize];
     uint8_t shadowPortIdx[kMaxGridSize];
     bool shadowLocks[kMaxGridSize];
+    LifeCell shadowLife[kMaxGridSize];
     int shadowW = 0, shadowH = 0, shadowF = 0;
 
     Engine() {
@@ -42,6 +48,11 @@ public:
 
     // Execute one frame. Returns MIDI events.
     int step(MidiEvent* outEvents, int maxEvents) {
+        if (lifeMode) {
+            int count = lifeGrid.step(outEvents, maxEvents);
+            updateShadow();
+            return count;
+        }
         io.clear();
         grid.run();
         int count = io.run(outEvents, maxEvents);
@@ -49,9 +60,67 @@ public:
         return count;
     }
 
-    void updateShadow() {
-        // Re-parse operators so port info is always up-to-date (even when stopped)
-        grid.parse();
+    void enterLifeMode() {
+        lifeMode = true;
+        lifeGrid.resize(grid.w, grid.h);
+        // Convert existing letter cells to alive LifeCells
+        for (int y = 0; y < grid.h; y++) {
+            for (int x = 0; x < grid.w; x++) {
+                int idx = x + grid.w * y;
+                char g = grid.cells[idx];
+                if (isLetter(g)) {
+                    lifeGrid.cells[idx].note = g;
+                    lifeGrid.cells[idx].channel = paintChannel;
+                    lifeGrid.cells[idx].octave = paintOctave;
+                    lifeGrid.cells[idx].alive = true;
+                }
+            }
+        }
+    }
+
+    void exitLifeMode(MidiEvent* outEvents, int maxEvents, int& eventCount) {
+        // Silence all Life notes
+        eventCount += lifeGrid.silence(outEvents + eventCount, maxEvents - eventCount);
+        // Copy Life state back to grid
+        for (int y = 0; y < grid.h; y++) {
+            for (int x = 0; x < grid.w; x++) {
+                int idx = x + grid.w * y;
+                grid.cells[idx] = lifeGrid.cells[idx].alive ? lifeGrid.cells[idx].note : '.';
+            }
+        }
+        lifeMode = false;
+    }
+
+    void updateShadow(bool skipParse = false) {
+        if (lifeMode) {
+            // Use wrap dimensions for display (visible area)
+            int dispW = lifeGrid.wrapW;
+            int dispH = lifeGrid.wrapH;
+            int dispSize = dispW * dispH;
+            // Copy only the visible portion (storage may be larger)
+            for (int y = 0; y < dispH; y++) {
+                for (int x = 0; x < dispW; x++) {
+                    int si = x + dispW * y;  // shadow index
+                    int li = x + lifeGrid.w * y;  // storage index
+                    shadowLife[si] = lifeGrid.cells[li];
+                    shadowCells[si] = lifeGrid.cells[li].alive ? lifeGrid.cells[li].note : '.';
+                }
+            }
+            memset(shadowLocks, 0, dispSize * sizeof(bool));
+            memset(shadowPorts, 0, dispSize);
+            memset(shadowPortOwner, 0, dispSize);
+            memset(shadowPortIdx, 0, dispSize);
+            shadowW = dispW;
+            shadowH = dispH;
+            shadowF = lifeGrid.generation;
+            return;
+        }
+
+        // Re-parse operators so port info is always up-to-date (even when stopped).
+        // Skip during playback — step() already runs parse via grid.run(),
+        // and calling parse() from the UI thread would race with the audio thread.
+        if (!skipParse)
+            grid.parse();
 
         int size = grid.w * grid.h;
         memcpy(shadowCells, grid.cells, size);

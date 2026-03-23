@@ -44,8 +44,11 @@ This builds and installs both the AU (`~/Library/Audio/Plug-Ins/Components/`) an
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+O` | Open .orca file |
-| `Cmd+S` | Save as .orca file |
-| `Cmd+G` | Set groove ratios |
+| `Cmd+S` | Save as .orca/.life file |
+| `Cmd+L` | Import modules (load .orca/.life files into inject cache) |
+| `Cmd+G` | Toggle Life (Game of Life) mode |
+| `Cmd+K` | Open command prompt |
+| `Cmd+F` | Open command prompt with `find:` |
 | `Cmd+=` | Zoom in |
 | `Cmd+-` | Zoom out |
 | `Cmd+Z` | Undo |
@@ -204,8 +207,9 @@ All commands have a shorthand equivalent to their first two characters, for exam
 - `write:H;12;34` Writes glyph `H`, at `12,34`(optional).
 - `time` Prints the time, in minutes seconds, since `0f`.
 - `midi:1;2` Set Midi output device to `#1`, and input device to `#2`.
-- `udp:1234;5678` Set UDP output port to `1234`, and input port to `5678`.
+- `udp:1234` Set UDP output port to `1234`.
 - `osc:1234` Set OSC output port to `1234`.
+- `ip:127.0.0.12` Set target IP for UDP/OSC output.
 - `groove:75;25` Set groove ratios (see [Groove](#groove)).
 
 ## Groove
@@ -241,6 +245,210 @@ Use the command prompt (`CmdOrCtrl+K`) and type `groove:75;25`.
 - **Shuffle slider**: A DAW-automatable parameter (0-200%) that maps to a 3-step groove. 0% = max inverse swing, 100% = straight, 200% = max swing.
 
 The current groove is displayed in the status bar as `groove:75;25;50`.
+
+#### Commander (Command Prompt)
+
+Press `Cmd+K` to open the command prompt, or `Cmd+F` to open with `find:` pre-filled. Type a command and press Enter to execute, or Escape to cancel. Up/Down arrows recall command history.
+
+All commands support 2-letter shorthands (first two characters).
+
+**Universal commands (both modes):**
+
+| Command | Short | Description |
+|---------|-------|-------------|
+| `find:text` | `fi` | Find text in grid and move cursor to first match |
+| `select:x;y;w;h` | `se` | Move cursor and optionally set selection size |
+| `write:text;x;y` | `wr` | Write text at position (or cursor if x;y omitted) |
+| `groove:75;25` | `gr` | Set groove ratios |
+| `cc:0` | `cc` | Set MIDI CC offset |
+| `pg:ch;msb;lsb;pgm` | `pg` | MIDI program change with optional bank select |
+| `copy` | `co` | Copy selection |
+| `paste` | `pa` | Paste clipboard |
+| `erase` | `er` | Erase selection |
+| `time` | `ti` | Write current time at cursor |
+| `color:f00;0f0;00f` | `cl` | Set theme colors (bLow;bMed;bHigh as hex RGB) |
+| `inject:name` | `in` | Inject cached module at cursor (or `inject:name;x;y`) |
+
+**Network commands:**
+
+| Command | Short | Description |
+|---------|-------|-------------|
+| `udp:7777` | `ud` | Set UDP output port |
+| `osc:7777` | `os` | Set OSC output port |
+| `ip:127.0.0.1` | `ip` | Set target IP address |
+| `osc:tidal` | -- | OSC preset for TidalCycles |
+| `osc:sonicpi` | -- | OSC preset for Sonic Pi |
+| `osc:supercollider` | -- | OSC preset for SuperCollider |
+| `osc:norns` | -- | OSC preset for Norns |
+
+**Life mode commands:**
+
+| Command | Short | Description |
+|---------|-------|-------------|
+| `scale:minor` | `sc` | Set scale by name |
+| `root:D` | `ro` | Set root note |
+| `rate:4` | `ra` | Set evolve rate (power of 2) |
+| `pulse` / `hold` | `pu`/`ho` | Set note mode |
+| `channel:5` | `ch` | Set paint channel (0-15) |
+| `octave:4` | `oc` | Set paint octave |
+| `minoct:2` | `mi` | Set minimum octave limit |
+| `maxoct:6` | `mo` | Set maximum octave limit |
+| `decay` | `de` | Toggle decay system (velocity + probability drop with age) |
+| `minvel:60` | `mv` | Set floor velocity at max age (1-127, default 40) |
+| `minprob:10` | `mp` | Set floor fire probability at max age (1-100%, default 10) |
+| `maxnotes:4` | `mn` | Set max notes per step per channel (0=unlimited) |
+| `seq` | `sq` | Toggle sequencer mode (row phase offset) |
+| `lockoct` | `lo` | Toggle octave lock (prevent octave drift on birth) |
+| `chord` | `cd` | Toggle chord tone filter (snap to root/3rd/5th) |
+| `dedup` | `dd` | Toggle note deduplication (merge identical notes, scale velocity by count) |
+| `dedupcc:1` | `dc` | Set CC number for dedup count modulation (-1=disabled) |
+| `rule:23/36` | `ru` | Set CA rule in S/B notation (or preset: `life`, `highlife`, `34life`, `seeds`, `diamoeba`, `daynight`, `replicator`, `2x2`) |
+| `reset` | -- | Reset to initial state |
+
+The `$` (self) operator also sends commands through the commander. For example, `$groove:75;25` will set the groove when the `$` operator is banged.
+
+## Life Mode
+
+Orca includes a **Game of Life sequencer mode** — a completely different mode where the grid runs Conway's Game of Life rules with musical note cells. Cells are born, survive, and die according to GoL rules, triggering MIDI notes on birth and silencing on death.
+
+### Entering Life Mode
+
+Press `Cmd+G` to toggle between normal Orca mode and Life mode. In Life mode, the grid is replaced with a cellular automaton where each alive cell represents a musical note.
+
+### How It Works
+
+- **Alive cells** have a note (A-G), MIDI channel (0-15), and octave (0-7)
+- **Birth**: When a dead cell has exactly 3 alive neighbors, a new cell is born. Its note is derived by stepping up or down within the current scale, based on the direction of propagation relative to its parents
+- **Survival**: Cells with 2-3 neighbors survive
+- **Death**: Cells with fewer than 2 or more than 3 neighbors die, sending a MIDI note-off
+- **Toroidal wrapping**: The grid wraps around — patterns going off one edge reappear on the opposite side
+- **Protected cells**: Locked cells are immune to death rules, acting as permanent anchors
+
+### Modes
+
+- **Pulse mode** (default): Notes retrigger on every evolution step. Clusters of same-note cells produce ratchets (rapid sequential notes)
+- **Hold mode**: Notes trigger on birth and sustain until death
+
+### Scales
+
+Notes evolve within a selected scale. Available scales: chromatic, major, minor, pentatonic, dorian, phrygian, lydian, mixolydian, locrian, harmonic minor, melodic minor, minor pentatonic, blues, whole tone, diminished.
+
+### Decay
+
+**Decay** (`decay:on`) is a unified aging system that makes cells fade over time — both in volume and reliability:
+
+- **Newborn cells** play at full velocity (127) and always fire (100% probability)
+- **As cells age**, both velocity and probability decay linearly over 64 generations
+- At max age, velocity reaches `minvel` (default 40) and probability reaches `minprob` (default 10%)
+- `minvel:80` — raise the velocity floor (louder old cells)
+- `minprob:30` — raise the probability floor (more reliable old cells)
+- Models organic aging: young cells are loud and reliable, old cells become quiet and sporadic
+
+### Density Thinning
+
+**Max notes** (`maxnotes:N`) caps how many notes fire per step **per MIDI channel**:
+
+- `maxnotes:0` = unlimited (default)
+- `maxnotes:4` = at most 4 notes per channel per step
+- Prevents wall-of-notes from dense patterns while giving each channel its own budget
+
+### Sequencer Mode
+
+**Sequencer mode** (`seq:on`) transforms the grid into a top-to-bottom step sequencer by staggering note emission across rows:
+
+- Instead of all rows firing simultaneously, each row group fires on a different frame within the evolve cycle
+- With `rate:8` and 16 rows: rows 0-1 fire on frame 0, rows 2-3 on frame 1, etc.
+- Visual guides show phase group boundaries; a sweeping highlight shows the active row group
+- Later rows naturally get shorter notes, reinforcing the sequential feel
+- Disables ratchet clustering (cells fire individually with phase scheduling)
+- No effect when `rate:1`
+
+### Octave Lock
+
+**Octave lock** (`lockoct:on`) prevents octave drift during note evolution. When cells are born, their note still evolves by stepping through the scale, but the octave stays locked to the parent median. Useful in sequencer mode to keep patterns in their intended register.
+
+### Chord Tone Filter
+
+**Chord filter** (`chord:on`) snaps all emitted notes to the nearest **chord tone** (root, 3rd, 5th degree of the current scale). This dramatically reduces dissonance by ensuring everything aligns to the triad:
+
+- Works with any scale — for pentatonic scales (5 notes or fewer), all notes are considered chord tones
+- Combine with `scale:minor` or `scale:major` for clean harmonic output
+- Especially effective with dense patterns that would otherwise produce clashing intervals
+
+### Note Deduplication
+
+**Dedup** (`dedup:on`) merges identical `{channel, pitch}` notes into a single note, scaling velocity by the number of cells:
+
+- **Velocity**: average velocity of all contributing cells + log2(count) × 15 boost. With decay on, this preserves the age-based variation while rewarding density
+- **CC modulation** (optional): `dedupcc:1` sends CC1 (mod wheel) proportional to the count (8 cells = CC 127). Map this to filter cutoff or expression in your synth for timbral variation. Disabled by default (`dedupcc:-1`)
+- Especially useful with dense patterns where many cells converge on the same note — instead of firing 5 identical C3s, fires one louder C3
+- Pairs well with decay: average velocity keeps age dynamics, count boost rewards density
+
+### Cellular Automata Rules
+
+By default, Life mode uses Conway's Game of Life (B3/S23). You can change the rules with the `rule` command:
+
+- `rule:23/3` — Conway's Life (S23/B3, default)
+- `rule:23/36` — HighLife (S23/B36, self-replicating patterns)
+- `rule:34/34` — 34 Life
+- `rule:life` / `rule:highlife` / `rule:seeds` / `rule:diamoeba` / `rule:daynight` / `rule:replicator` / `rule:2x2` — named presets
+
+Rules use S/B notation: survival digits before `/`, birth digits after. For example, `23/36` means cells survive with 2 or 3 neighbors, and are born with 3 or 6 neighbors.
+
+### Octave Range
+
+Control the octave range with `minoct:N` and `maxoct:N`:
+
+- `minoct:2` — no notes below octave 2
+- `maxoct:5` — no notes above octave 5
+- Born cells are clamped to the active range
+- Octave cycling (Tab) wraps within the range
+- Tighter ranges reduce dissonance from extreme octave spread
+
+### Pattern Library
+
+Life mode includes a library of classic GoL patterns organized by category:
+- **Still Lifes** (11): Block, Beehive, Loaf, Boat, Tub, Pond, Ship, Long Boat, Barge, Mango, Eater 1
+- **Oscillators** (14): Blinker, Toad, Beacon, Pulsar, Pentadecathlon, Clock, Octagon 2, Figure 8, Tumbler, Fumarole, Queen Bee Shuttle, Twin Bees Shuttle, Ants, Turning Toads
+- **Spaceships** (9): Glider (4 directions), LWSS, MWSS, HWSS, Copperhead, Loafer
+- **Methuselahs** (9): R-pentomino, Diehard, Acorn, Pi, B-heptomino, Thunderbird, Herschel, Rabbits, Lidka
+- **Guns** (3): Gosper Gun, Simkin Gun, Simkin Gun 1B
+- **Puffers** (2): Puffer 1, Switchengine
+
+Patterns are placed with random notes from the current scale, using the active paint channel and octave.
+
+### Life Mode Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+G` | Toggle Life mode on/off |
+| `A-G` / `a-g` | Place a note cell |
+| `Tab` | Cycle paint octave |
+| `Shift+Tab` | Cycle paint channel |
+| `Cmd+Shift+S` | Cycle scale |
+| `Cmd+N` | Cycle root note (C, C#, D, ... B) |
+| `Cmd+M` | Toggle pulse/hold mode |
+| `Cmd+Shift+Up/Down` | Increase/decrease evolve rate (powers of 2) |
+| `Cmd+Shift+K` | Toggle lock (protect) selected cells |
+| `Cmd+P` | Enter stamp mode / cycle pattern within category |
+| `Cmd+Shift+P` | Cycle pattern backward within category |
+| `Cmd+]` / `Cmd+[` | Cycle pattern category |
+| `Enter` (stamp mode) | Place pattern |
+| `Escape` (stamp mode) | Cancel stamp mode |
+| `Cmd+E` | Rotate selection 90° clockwise |
+| `Cmd+Shift+H` | Mirror selection horizontal |
+| `Cmd+Shift+J` | Mirror selection vertical |
+| `Cmd+Up/Down` | Shift octave of selected cells |
+| `Cmd+Left/Right` | Shift channel of selected cells |
+| `Cmd+R` | Reset to initial state |
+| `Cmd+Shift+R` | Save current state as new initial |
+| `Cmd+Z` | Undo |
+| `Cmd+Shift+Z` | Redo |
+| `Cmd+S` | Save as .life file |
+
+### .life File Format
+
+Life mode uses its own file format (`.life`) separate from `.orca` files. Files can be saved with `Cmd+S` and loaded via drag-and-drop. The format stores grid dimensions, cell data (note, channel, octave, lock state), and all settings (scale, root, evolve rate, pulse mode, decay, min velocity, min probability, max notes, sequencer mode, octave lock, chord filter, dedup, dedup CC, min/max octave, CA rule).
 
 ## Base36 Table
 

@@ -59,6 +59,7 @@ target_link_libraries(OrcaPlugin
     PRIVATE
         juce::juce_audio_utils
         juce::juce_gui_basics
+        juce::juce_osc
         ${COREMIDI_FRAMEWORK}
         ${AUDIOTOOLBOX_FRAMEWORK}
     PUBLIC
