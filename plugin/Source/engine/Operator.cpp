@@ -190,7 +190,8 @@ void OperatorInstance::operation(Grid& grid, EngineIO& io, bool force,
         int rate = static_cast<int>(listen(grid, ports[PRate], true));
         int mod = static_cast<int>(listen(grid, ports[PMod], true));
         if (rate == 0) rate = 1;
-        int val = mod > 0 ? (grid.f / rate) % mod : 0;
+        if (mod == 0) { hasResult = false; break; } // match JS: % 0 = NaN → no output
+        int val = (grid.f / rate) % mod;
         result = keyOf(val);
         hasResult = true;
         break;
@@ -560,26 +561,65 @@ void OperatorInstance::operation(Grid& grid, EngineIO& io, bool force,
         break;
     }
 
-    case OpType::Osc: // = (no-op in plugin)
-    case OpType::Udp: // ; (no-op in plugin)
-    {
-        // Lock eastward glyphs until '.'
+    case OpType::Osc: { // =
+        // Port 0 at (1,0) is path char, data starts at x+2
+        char pathChar = grid.glyphAt(x + 1, y);
+        grid.lock(x + 1, y);
+
+        char oscBuf[64];
+        int oscLen = 0;
+        for (int lx = 2; lx <= 36; lx++) {
+            char g = grid.glyphAt(x + lx, y);
+            grid.lock(x + lx, y);
+            if (g == '.') break;
+            if (oscLen < 62) oscBuf[oscLen++] = g;
+        }
+        oscBuf[oscLen] = '\0';
+
+        if (!hasNeighbor(grid, '*') && !force) break;
+        if (pathChar == '.' || pathChar == '*') break;
+
+        io.pushOsc(pathChar, oscBuf, oscLen);
+        draw = false;
+        break;
+    }
+
+    case OpType::Udp: { // ;
+        // Collect eastward glyphs as raw message
+        char udpBuf[64];
+        int udpLen = 0;
         for (int lx = 1; lx <= 36; lx++) {
             char g = grid.glyphAt(x + lx, y);
             grid.lock(x + lx, y);
             if (g == '.') break;
+            if (udpLen < 63) udpBuf[udpLen++] = g;
         }
+        udpBuf[udpLen] = '\0';
+
+        if (!hasNeighbor(grid, '*') && !force) break;
+
+        io.pushUdp(udpBuf, udpLen);
+        draw = false;
         break;
     }
 
     case OpType::Self: { // $
-        // Lock eastward glyphs until '.'
+        // Lock eastward glyphs until '.', collect into command string
+        char cmdBuf[64];
+        int cmdLen = 0;
         for (int lx = 1; lx <= 36; lx++) {
             char g = grid.glyphAt(x + lx, y);
             grid.lock(x + lx, y);
             if (g == '.') break;
+            if (cmdLen < 63) cmdBuf[cmdLen++] = g;
         }
-        // No-op in plugin context (would need commander)
+        cmdBuf[cmdLen] = '\0';
+
+        if (!hasNeighbor(grid, '*') && !force) break;
+        if (cmdLen == 0) break;
+
+        draw = false;
+        io.pushCommand(cmdBuf, cmdLen);
         break;
     }
 
