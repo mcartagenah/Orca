@@ -61,6 +61,9 @@ public:
     juce::AudioParameterChoice* lifeRootParam     = nullptr;
     juce::AudioParameterBool*   lifePulseParam    = nullptr;
     juce::AudioParameterChoice* lifeRuleParam     = nullptr;
+    juce::AudioParameterBool*   lifeConductorParam = nullptr;
+    juce::AudioParameterBool*   lifeMicrotuneParam = nullptr;
+    juce::AudioParameterInt*    lifeMicrotuneAmtParam = nullptr;
 
     float lastShuffleValue = 100.0f;
 

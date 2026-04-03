@@ -189,6 +189,13 @@ void GridComponent::paint(juce::Graphics& g) {
                   << (engine.lifeGrid.lockOctave ? "  lockoct" : "")
                   << (engine.lifeGrid.chordDegreeCount > 0 ? juce::String("  chord:") + engine.lifeGrid.chordDegreesString() : juce::String())
                   << (engine.lifeGrid.dedup ? juce::String("  dedup") + (engine.lifeGrid.dedupCC >= 0 ? juce::String(" cc:") + juce::String(engine.lifeGrid.dedupCC) : juce::String()) : juce::String())
+                  << (engine.lifeGrid.conductorMode ? "  conductor" : "")
+                  << (engine.lifeGrid.microtuning ? juce::String("  microtune:") + juce::String(engine.lifeGrid.microtuneAmount) : juce::String())
+                  << (engine.lifeGrid.loopState == orca::LifeGrid::LoopRecording ?
+                      juce::String("  loop:rec ") + juce::String(engine.lifeGrid.loopHead) + "/" + juce::String(engine.lifeGrid.loopLength) :
+                      engine.lifeGrid.loopState == orca::LifeGrid::LoopPlaying ?
+                      juce::String("  loop:") + juce::String(engine.lifeGrid.loopHead + 1) + "/" + juce::String(engine.lifeGrid.loopRecorded) :
+                      juce::String())
                   << (strcmp(engine.lifeGrid.ruleString, "23/3") != 0 ? juce::String("  rule:") + juce::String(engine.lifeGrid.ruleString) : juce::String())
                   << ((engine.lifeGrid.minOctave != 0 || engine.lifeGrid.maxOctave != 7) ?
                       juce::String("  oct:") + juce::String(engine.lifeGrid.minOctave) + "-" + juce::String(engine.lifeGrid.maxOctave) :
@@ -752,6 +759,39 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
         }
     }
 
+    // Life mode: Cmd+T = toggle conductor mode
+    if (cmd && !shift && code == 'T') {
+        auto& engine = processor.engine;
+        if (engine.lifeMode) {
+            processor.lifeConductorParam->setValueNotifyingHost(
+                processor.lifeConductorParam->get() ? 0.0f : 1.0f);
+            return true;
+        }
+    }
+
+    // Life mode: Cmd+U = toggle microtuning
+    if (cmd && !shift && code == 'U') {
+        auto& engine = processor.engine;
+        if (engine.lifeMode) {
+            processor.lifeMicrotuneParam->setValueNotifyingHost(
+                processor.lifeMicrotuneParam->get() ? 0.0f : 1.0f);
+            return true;
+        }
+    }
+
+    // Life mode: Cmd+E = toggle loop play/off
+    if (cmd && !shift && code == 'E') {
+        auto& engine = processor.engine;
+        if (engine.lifeMode) {
+            const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+            if (engine.lifeGrid.loopState == orca::LifeGrid::LoopPlaying)
+                engine.lifeGrid.stopLoop();
+            else if (engine.lifeGrid.loopRecorded > 0)
+                engine.lifeGrid.startLoopPlayback();
+            return true;
+        }
+    }
+
     // Life mode: Cmd+Shift+K = toggle lock (protect) selected cells
     if (cmd && shift && code == 'K') {
         auto& engine = processor.engine;
@@ -797,6 +837,13 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
         else
             stampCategory = (stampCategory - 1 + numStampCategories) % numStampCategories;
         stampIndex = stampCategories[stampCategory].start;
+        return true;
+    }
+
+    // Conductor mode: Enter = trigger next evolution
+    if (!stampMode && !cmd && !shift && code == juce::KeyPress::returnKey
+        && processor.engine.lifeMode && processor.engine.lifeGrid.conductorMode) {
+        processor.engine.lifeGrid.conductorTrigger.store(true, std::memory_order_relaxed);
         return true;
     }
 
@@ -2046,6 +2093,46 @@ bool Commander::trigger(OrcaProcessor& processor, GridComponent& editor) {
             if (processor.lifeMaxOctParam->get() < v)
                 processor.lifeMaxOctParam->setValueNotifyingHost(
                     processor.lifeMaxOctParam->convertTo0to1(v));
+        }
+    }
+    else if (isLife && cmd.name == "conductor") {
+        auto val = cmd.value.toLowerCase().trim();
+        bool on;
+        if (val == "on") on = true;
+        else if (val == "off") on = false;
+        else on = !processor.lifeConductorParam->get(); // toggle
+        processor.lifeConductorParam->setValueNotifyingHost(on ? 1.0f : 0.0f);
+    }
+    else if (isLife && cmd.name == "microtune") {
+        auto val = cmd.value.toLowerCase().trim();
+        if (val == "on") {
+            processor.lifeMicrotuneParam->setValueNotifyingHost(1.0f);
+        } else if (val == "off") {
+            processor.lifeMicrotuneParam->setValueNotifyingHost(0.0f);
+        } else if (val.isNotEmpty() && val.containsOnly("0123456789")) {
+            int amt = juce::jlimit(0, 100, val.getIntValue());
+            processor.lifeMicrotuneAmtParam->setValueNotifyingHost(
+                processor.lifeMicrotuneAmtParam->convertTo0to1(amt));
+            if (!processor.lifeMicrotuneParam->get())
+                processor.lifeMicrotuneParam->setValueNotifyingHost(1.0f);
+        } else {
+            bool on = !processor.lifeMicrotuneParam->get();
+            processor.lifeMicrotuneParam->setValueNotifyingHost(on ? 1.0f : 0.0f);
+        }
+    }
+    else if (isLife && cmd.name == "loop") {
+        auto val = cmd.value.toLowerCase().trim();
+        const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+        if (val == "off" || val == "stop" || val == "0") {
+            engine.lifeGrid.stopLoop();
+        } else if (val.isNotEmpty() && val.containsOnly("0123456789")) {
+            int len = juce::jlimit(1, 64, val.getIntValue());
+            engine.lifeGrid.armLoop(len);
+        } else {
+            if (engine.lifeGrid.loopState == orca::LifeGrid::LoopPlaying)
+                engine.lifeGrid.stopLoop();
+            else if (engine.lifeGrid.loopRecorded > 0)
+                engine.lifeGrid.startLoopPlayback();
         }
     }
     else if (isLife && cmd.name == "reset") {
