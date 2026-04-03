@@ -22,6 +22,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrcaProcessor::createParamet
         juce::StringArray{"Off", "Forward", "Reverse", "Mirror", "Random"}, 0));
     timingGroup->addChild(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID("life_pulse", 1), "Pulse Mode", true));
+    timingGroup->addChild(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("life_conductor", 1), "Conductor Mode", false));
     layout.add(std::move(timingGroup));
 
     // ── Life: Pitch ──
@@ -44,6 +46,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrcaProcessor::createParamet
     pitchGroup->addChild(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID("life_chord", 1), "Chord Filter",
         juce::StringArray{"Off", "135", "1357", "125", "145", "1356", "12356", "1234567"}, 0));
+    pitchGroup->addChild(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("life_microtune", 1), "Microtuning", false));
+    pitchGroup->addChild(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID("life_microtune_amt", 1), "Microtune Amount", 0, 100, 50));
     layout.add(std::move(pitchGroup));
 
     // ── Life: Dynamics ──
@@ -98,6 +104,9 @@ OrcaProcessor::OrcaProcessor()
     lifeRootParam    = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("life_root"));
     lifePulseParam   = dynamic_cast<juce::AudioParameterBool*>  (apvts.getParameter("life_pulse"));
     lifeRuleParam    = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("life_rule"));
+    lifeConductorParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("life_conductor"));
+    lifeMicrotuneParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("life_microtune"));
+    lifeMicrotuneAmtParam = dynamic_cast<juce::AudioParameterInt*>(apvts.getParameter("life_microtune_amt"));
 
     // Create virtual MIDI port via CoreMIDI C API (bypasses JUCE's broken singleton)
     midiClient = 0;
@@ -128,6 +137,9 @@ void OrcaProcessor::syncParamsToLifeGrid() {
     lg.maxOctave    = lifeMaxOctParam->get();
     if (lg.minOctave > lg.maxOctave) lg.minOctave = lg.maxOctave;
     lg.pulseMode    = lifePulseParam->get();
+    lg.conductorMode = lifeConductorParam->get();
+    lg.microtuning  = lifeMicrotuneParam->get();
+    lg.microtuneAmount = lifeMicrotuneAmtParam->get();
     lg.currentScale = static_cast<orca::LifeGrid::ScaleType>(lifeScaleParam->getIndex());
     lg.rootNote     = lifeRootParam->getIndex();
 
@@ -234,6 +246,15 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // Sync Life mode parameters from APVTS → engine
     if (engine.lifeMode)
         syncParamsToLifeGrid();
+
+    // Conductor mode: scan incoming MIDI for NoteOn to trigger evolution
+    if (engine.lifeMode && engine.lifeGrid.conductorMode) {
+        for (const auto metadata : midiMessages) {
+            auto msg = metadata.getMessage();
+            if (msg.isNoteOn())
+                engine.lifeGrid.conductorTrigger.store(true, std::memory_order_relaxed);
+        }
+    }
 
     // Get DAW transport state
     double bpm = 120.0;

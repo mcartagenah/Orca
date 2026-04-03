@@ -2,6 +2,8 @@
 
 #include "Types.h"
 #include "Transpose.h"
+#include <atomic>
+#include <memory>
 
 namespace orca {
 
@@ -13,6 +15,7 @@ struct LifeCell {
     bool locked = false;   // protected from GoL death rules
     bool fired = false;    // triggered a note this step (for UI flash)
     uint16_t age = 0;      // generations survived (0 = just born)
+    uint8_t neighborCount = 0; // neighbor count at last evolution (for microtuning)
 };
 
 // Classic GoL pattern definitions
@@ -334,7 +337,7 @@ public:
             activeNotes[i] = { 0, 0, false };
         }
         generation = 0;
-        frameCounter = 0;
+        frameCounter = evolveRate - 1;
         hasInitialState = false;
     }
 
@@ -594,7 +597,7 @@ public:
     int minOctave = 0;   // lower octave limit (0-based)
     int maxOctave = 7;   // upper octave limit (0-based)
     int evolveRate = 4;  // evolve every N frames, power-of-2 (1,2,4,8,16,32)
-    int frameCounter = 0;
+    int frameCounter = 3; // default to evolveRate-1 so first frame hits cycle boundary
     bool pulseMode = true;  // false=hold (note-on at birth, note-off at death), true=pulse (retrigger every step)
     bool decay = false;           // unified age system: velocity drops + probability drops with age
     uint8_t minVelocity = 40;    // floor velocity for newborn cells (1-127)
@@ -672,7 +675,8 @@ public:
                 vel = juce::jmin(127, static_cast<int>(vel + boost));
             }
 
-            // Emit NoteOn
+            // Emit PitchBend + NoteOn
+            eventCount += emitPitchBend(m.channel, m.firstCellIndex, outEvents + eventCount, maxEvents - eventCount);
             if (eventCount < maxEvents) {
                 auto& e = outEvents[eventCount++];
                 e.type = MidiEvent::NoteOn;
@@ -791,6 +795,28 @@ public:
         return notesFiredPerChannel[channel & 0x0F] < maxNotes;
     }
 
+    // Microtuning: emit PitchBend before a NoteOn based on cell's neighbor count
+    // Stable cells (2 neighbors) = center, struggling cells (1 or 3) = detuned
+    int emitPitchBend(uint8_t channel, int cellIndex, MidiEvent* outEvents, int maxEvents) {
+        if (!microtuning || microtuneAmount == 0 || maxEvents < 1) return 0;
+        int neighbors = (cellIndex >= 0 && cellIndex < w * h) ? cells[cellIndex].neighborCount : 2;
+        int deviation = neighbors - 2; // 2 = stable center
+        // Scale: amount 100 = 1 semitone of max bend per deviation unit
+        // PitchBend: 0-16383, center=8192, typically ±2 semitones
+        // So 1 semitone = 4096 units. deviation*amount/100 semitones.
+        int bendOffset = deviation * microtuneAmount * 4096 / 100;
+        int bend = 8192 + bendOffset;
+        if (bend < 0) bend = 0;
+        if (bend > 16383) bend = 16383;
+        auto& e = outEvents[0];
+        e.type = MidiEvent::PitchBend;
+        e.bytes[0] = static_cast<uint8_t>(0xE0 + (channel & 0x0F));
+        e.bytes[1] = static_cast<uint8_t>(bend & 0x7F);        // LSB
+        e.bytes[2] = static_cast<uint8_t>((bend >> 7) & 0x7F);  // MSB
+        e.numBytes = 3;
+        return 1;
+    }
+
     // Row phase offset: stagger note emission across the evolve cycle by row
     enum SeqMode { SeqOff = 0, SeqForward, SeqReverse, SeqMirror, SeqRandom };
     SeqMode seqMode = SeqOff;
@@ -813,6 +839,14 @@ public:
     }
 
     bool lockOctave = false; // born cells inherit parent octave (no octave shifts from scale stepping)
+
+    // Conductor mode: manual evolution advancement
+    bool conductorMode = false;
+    std::atomic<bool> conductorTrigger { false };
+
+    // Microtuning: pitch bend per cell based on neighbor count
+    bool microtuning = false;
+    int microtuneAmount = 50; // 0-100, percentage of max detune
     // Chord degree filter: which scale degrees are allowed (1-indexed, stored as 0-indexed bitmask)
     // e.g. "135" = root+3rd+5th, "1357" = seventh chord, "0" or empty = off
     int chordDegrees[7] = { 0, 2, 4 }; // default: 1st, 3rd, 5th (stored as 0-indexed)
@@ -908,6 +942,8 @@ public:
             // Per-phase maxNotes check
             if (maxNotes > 0 && phaseNotesPerCh[pn.channel & 0x0F] >= maxNotes) continue;
 
+            eventCount += emitPitchBend(pn.channel, pn.cellIndex, outEvents + eventCount, maxEvents - eventCount);
+            if (eventCount >= maxEvents) break;
             auto& e = outEvents[eventCount++];
             e.type = MidiEvent::NoteOn;
             e.bytes[0] = static_cast<uint8_t>(0x90 + pn.channel);
@@ -932,6 +968,7 @@ public:
         uint8_t remaining;  // notes left to fire (including current)
         bool activeNote;    // is a note currently sounding from this ratchet?
         uint8_t velocity;   // velocity for ratchet notes
+        int cellIndex;      // source cell index (for microtuning PitchBend lookup)
     };
     Ratchet ratchets[kMaxRatchets];
     int ratchetCount = 0;
@@ -941,9 +978,48 @@ public:
         int eventCount = 0;
 
         // Only evolve every N frames
+        // In conductor mode: seq scanning cycles normally at evolveRate,
+        // but GoL rules fire immediately on conductorTrigger (any frame)
+        // without resetting the seq cycle.
         frameCounter++;
-        if (frameCounter < evolveRate) {
-            // Process pending ratchets and phase-scheduled notes on intermediate frames
+        bool conductorFired = conductorMode &&
+            conductorTrigger.exchange(false, std::memory_order_relaxed);
+        bool atCycleBoundary = (frameCounter >= evolveRate);
+
+        // Mid-cycle conductor trigger: evolve grid only, don't disturb seq cycle
+        if (conductorFired && !atCycleBoundary) {
+            memcpy(buffer, cells, sizeof(LifeCell) * w * h);
+            for (int y = 0; y < wrapH; y++) {
+                for (int x = 0; x < wrapW; x++) {
+                    int idx = x + w * y;
+                    int neighbors = countNeighbors(x, y);
+                    bool wasAlive = buffer[idx].alive;
+                    cells[idx].neighborCount = static_cast<uint8_t>(neighbors);
+                    if (wasAlive) {
+                        if (!shouldSurvive(neighbors) && !buffer[idx].locked) {
+                            cells[idx].alive = false;
+                            cells[idx].note = '.';
+                            cells[idx].age = 0;
+                        } else if (decay) {
+                            cells[idx].age = buffer[idx].age + 1;
+                        }
+                    } else if (shouldBeBorn(neighbors)) {
+                        LifeCell born = deriveBirthCell(x, y);
+                        born.age = 0;
+                        cells[idx] = born;
+                    }
+                }
+            }
+            // Continue with normal intermediate frame processing
+            eventCount += processRatchets(outEvents, maxEvents);
+            if (seqMode != SeqOff)
+                eventCount += processPhaseNotes(frameCounter, outEvents + eventCount, maxEvents - eventCount);
+            generation++;
+            return eventCount;
+        }
+
+        if (!atCycleBoundary) {
+            // Normal intermediate frame: process pending ratchets and phase notes
             eventCount += processRatchets(outEvents, maxEvents);
             if (seqMode != SeqOff)
                 eventCount += processPhaseNotes(frameCounter, outEvents + eventCount, maxEvents - eventCount);
@@ -951,6 +1027,7 @@ public:
             return eventCount;
         }
         frameCounter = 0;
+        bool shouldEvolve = conductorMode ? conductorFired : true;
         memset(notesFiredPerChannel, 0, sizeof(notesFiredPerChannel));
         phaseNoteCount = 0;
         preEmitCount = 0;
@@ -965,52 +1042,63 @@ public:
         eventCount += silenceRatchets(outEvents + eventCount, maxEvents - eventCount);
         ratchetCount = 0;
 
+        // Generation loop: playback mode replaces evolution
+        if (loopState == LoopPlaying) {
+            eventCount += loopPlayback(outEvents + eventCount, maxEvents - eventCount);
+            generation++;
+            return eventCount;
+        }
+
         // Auto-save initial state before first evolution
-        if (!hasInitialState && population() > 0)
+        if (shouldEvolve && !hasInitialState && population() > 0)
             saveInitialState();
 
-        // Snapshot current state
+        // Snapshot current state (needed for neighbor counting even without evolution)
         memcpy(buffer, cells, sizeof(LifeCell) * w * h);
 
-        // In pulse mode, silence all active notes before applying rules
+        // In pulse mode, silence all active notes before re-emitting
         if (pulseMode)
             eventCount += silence(outEvents + eventCount, maxEvents - eventCount);
 
-        // Apply GoL rules (only within visible/wrap boundary)
-        for (int y = 0; y < wrapH; y++) {
-            for (int x = 0; x < wrapW; x++) {
-                int idx = x + w * y;
-                int neighbors = countNeighbors(x, y);
-                bool wasAlive = buffer[idx].alive;
+        if (shouldEvolve) {
+            // Apply GoL rules (only within visible/wrap boundary)
+            for (int y = 0; y < wrapH; y++) {
+                for (int x = 0; x < wrapW; x++) {
+                    int idx = x + w * y;
+                    int neighbors = countNeighbors(x, y);
+                    bool wasAlive = buffer[idx].alive;
 
-                if (wasAlive) {
-                    if (!shouldSurvive(neighbors) && !buffer[idx].locked) {
-                        // Death (protected cells are immune)
-                        cells[idx].alive = false;
-                        cells[idx].note = '.';
-                        cells[idx].age = 0;
+                    cells[idx].neighborCount = static_cast<uint8_t>(neighbors);
 
-                        // Emit note-off (hold mode only; pulse already silenced above)
-                        if (!pulseMode && activeNotes[idx].active && eventCount < maxEvents) {
-                            auto& e = outEvents[eventCount++];
-                            e.type = MidiEvent::NoteOff;
-                            e.bytes[0] = static_cast<uint8_t>(0x80 + activeNotes[idx].channel);
-                            e.bytes[1] = activeNotes[idx].midiNote;
-                            e.bytes[2] = 0;
-                            e.numBytes = 3;
-                            activeNotes[idx].active = false;
+                    if (wasAlive) {
+                        if (!shouldSurvive(neighbors) && !buffer[idx].locked) {
+                            // Death (protected cells are immune)
+                            cells[idx].alive = false;
+                            cells[idx].note = '.';
+                            cells[idx].age = 0;
+
+                            // Emit note-off (hold mode only; pulse already silenced above)
+                            if (!pulseMode && activeNotes[idx].active && eventCount < maxEvents) {
+                                auto& e = outEvents[eventCount++];
+                                e.type = MidiEvent::NoteOff;
+                                e.bytes[0] = static_cast<uint8_t>(0x80 + activeNotes[idx].channel);
+                                e.bytes[1] = activeNotes[idx].midiNote;
+                                e.bytes[2] = 0;
+                                e.numBytes = 3;
+                                activeNotes[idx].active = false;
+                            }
+                        } else {
+                            // Survival — increment age
+                            if (decay)
+                                cells[idx].age = buffer[idx].age + 1;
                         }
                     } else {
-                        // Survival — increment age
-                        if (decay)
-                            cells[idx].age = buffer[idx].age + 1;
-                    }
-                } else {
-                    if (shouldBeBorn(neighbors)) {
-                        // Birth
-                        LifeCell born = deriveBirthCell(x, y);
-                        born.age = 0;
-                        cells[idx] = born;
+                        if (shouldBeBorn(neighbors)) {
+                            // Birth
+                            LifeCell born = deriveBirthCell(x, y);
+                            born.age = 0;
+                            cells[idx] = born;
+                        }
                     }
                 }
             }
@@ -1085,6 +1173,7 @@ public:
 
                     // Fire first ratchet note immediately
                     uint8_t vel = velocityFor(i);
+                    eventCount += emitPitchBend(cCh, i, outEvents + eventCount, maxEvents - eventCount);
                     if (eventCount < maxEvents) {
                         auto& e = outEvents[eventCount++];
                         e.type = MidiEvent::NoteOn;
@@ -1099,13 +1188,14 @@ public:
                     ratchets[ratchetCount++] = {
                         static_cast<uint8_t>(tr.id), cCh,
                         static_cast<uint8_t>(ratchetNotes - 1), // remaining after first
-                        true, vel
+                        true, vel, i
                     };
 
                     // Mark all cluster cells so they don't fire individually
                     // (clusterTag already marks them, we skip tagged cells below)
                 } else if (clusterSize == 1) {
                     // Single cell: fire normally
+                    eventCount += emitPitchBend(cCh, i, outEvents + eventCount, maxEvents - eventCount);
                     if (eventCount < maxEvents) {
                         auto& e = outEvents[eventCount++];
                         e.type = MidiEvent::NoteOn;
@@ -1155,6 +1245,7 @@ public:
                     // Density gate (phase-0 notes in seq mode, or all notes in normal mode)
                     if (!canFireMore(cells[i].channel)) continue;
 
+                    eventCount += emitPitchBend(cells[i].channel, i, outEvents + eventCount, maxEvents - eventCount);
                     if (eventCount < maxEvents) {
                         auto& e = outEvents[eventCount++];
                         e.type = MidiEvent::NoteOn;
@@ -1175,7 +1266,11 @@ public:
         if (dedup && preEmitCount > 0)
             eventCount += flushDedup(outEvents + eventCount, maxEvents - eventCount);
 
-        firstEvolution = false;
+        // Generation loop: record this evolution's state + events
+        if (shouldEvolve && loopState == LoopRecording)
+            loopRecord(outEvents, eventCount);
+
+        if (shouldEvolve) firstEvolution = false;
         generation++;
         return eventCount;
     }
@@ -1198,6 +1293,7 @@ public:
             }
 
             // Fire next ratchet note
+            eventCount += emitPitchBend(rch.channel, rch.cellIndex, outEvents + eventCount, maxEvents - eventCount);
             if (eventCount < maxEvents) {
                 auto& e = outEvents[eventCount++];
                 e.type = MidiEvent::NoteOn;
@@ -1295,11 +1391,125 @@ public:
                     cells[x + w * y] = initialState[x + initialW * y];
         }
         generation = 0;
-        frameCounter = 0;
+        frameCounter = evolveRate - 1;
         firstEvolution = true;
         phaseNoteCount = 0;
         mirrorForward = true;
         memset(notesFiredPerChannel, 0, sizeof(notesFiredPerChannel));
+        return eventCount;
+    }
+
+    // ── Generation Loop ──────────────────────────────────────────────────
+    enum LoopState { LoopOff = 0, LoopRecording, LoopPlaying };
+    LoopState loopState = LoopOff;
+    int loopLength = 0;      // target loop length (generations)
+    int loopHead = 0;        // current write/read position
+    int loopRecorded = 0;    // how many generations recorded so far
+
+    static constexpr int kMaxLoopGens = 64;
+    static constexpr int kMaxLoopEvents = 256;
+
+    struct LoopGeneration {
+        LifeCell cells[kMaxGridSize];
+        MidiEvent events[kMaxLoopEvents];
+        int eventCount = 0;
+        Ratchet ratchets[kMaxRatchets];
+        int ratchetCount = 0;
+        PhaseNote phaseNotes[kMaxPhaseNotes];
+        int phaseNoteCount = 0;
+        int wrapW = 0, wrapH = 0, storageW = 0;
+    };
+
+    std::unique_ptr<LoopGeneration[]> loopBuffer;
+
+    void armLoop(int length) {
+        int len = (length < 1) ? 1 : (length > kMaxLoopGens ? kMaxLoopGens : length);
+        loopBuffer.reset(new LoopGeneration[len]);
+        loopLength = len;
+        loopHead = 0;
+        loopRecorded = 0;
+        loopState = LoopRecording;
+    }
+
+    void stopLoop() {
+        loopState = LoopOff;
+        loopBuffer.reset();
+        loopLength = 0;
+        loopHead = 0;
+        loopRecorded = 0;
+    }
+
+    void startLoopPlayback() {
+        if (loopRecorded > 0 && loopBuffer) {
+            loopState = LoopPlaying;
+            loopHead = 0;
+        }
+    }
+
+    // Called at end of evolution in step() — snapshot current state
+    void loopRecord(const MidiEvent* events, int eventCount) {
+        if (loopState != LoopRecording || !loopBuffer || loopHead >= loopLength) return;
+        auto& gen = loopBuffer[loopHead];
+        // Store grid snapshot with current dimensions
+        for (int y = 0; y < wrapH; y++)
+            for (int x = 0; x < wrapW; x++)
+                gen.cells[x + wrapW * y] = cells[x + w * y];
+        gen.wrapW = wrapW;
+        gen.wrapH = wrapH;
+        gen.storageW = w;
+        // Store emitted events
+        gen.eventCount = (eventCount < kMaxLoopEvents) ? eventCount : kMaxLoopEvents;
+        for (int i = 0; i < gen.eventCount; i++)
+            gen.events[i] = events[i];
+        // Store ratchets and phase notes for inter-frame replay
+        gen.ratchetCount = (ratchetCount < kMaxRatchets) ? ratchetCount : kMaxRatchets;
+        for (int i = 0; i < gen.ratchetCount; i++)
+            gen.ratchets[i] = ratchets[i];
+        gen.phaseNoteCount = (phaseNoteCount < kMaxPhaseNotes) ? phaseNoteCount : kMaxPhaseNotes;
+        for (int i = 0; i < gen.phaseNoteCount; i++)
+            gen.phaseNotes[i] = phaseNotes[i];
+
+        loopHead++;
+        loopRecorded = loopHead;
+        if (loopHead >= loopLength) {
+            loopState = LoopPlaying;
+            loopHead = 0;
+        }
+    }
+
+    // Called at evolution time when loop is playing — restore state + replay events
+    int loopPlayback(MidiEvent* outEvents, int maxEvents) {
+        if (!loopBuffer || loopRecorded == 0) return 0;
+        auto& gen = loopBuffer[loopHead];
+
+        // Silence current active notes
+        int eventCount = silence(outEvents, maxEvents);
+
+        // Restore grid from snapshot
+        for (int i = 0; i < w * h; i++)
+            cells[i] = LifeCell();
+        int copyW = (gen.wrapW < wrapW) ? gen.wrapW : wrapW;
+        int copyH = (gen.wrapH < wrapH) ? gen.wrapH : wrapH;
+        for (int y = 0; y < copyH; y++)
+            for (int x = 0; x < copyW; x++)
+                cells[x + w * y] = gen.cells[x + gen.wrapW * y];
+
+        // Replay stored events
+        int eventsToReplay = (gen.eventCount < (maxEvents - eventCount)) ? gen.eventCount : (maxEvents - eventCount);
+        for (int i = 0; i < eventsToReplay; i++)
+            outEvents[eventCount++] = gen.events[i];
+
+        // Restore ratchets and phase notes for intermediate frame processing
+        ratchetCount = gen.ratchetCount;
+        for (int i = 0; i < ratchetCount; i++)
+            ratchets[i] = gen.ratchets[i];
+        phaseNoteCount = gen.phaseNoteCount;
+        for (int i = 0; i < phaseNoteCount; i++)
+            phaseNotes[i] = gen.phaseNotes[i];
+
+        // Advance read head
+        loopHead = (loopHead + 1) % loopRecorded;
+
         return eventCount;
     }
 

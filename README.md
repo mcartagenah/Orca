@@ -81,6 +81,9 @@ All parameters are exposed via APVTS and can be automated from the DAW:
 | Life: Processing | Dedup | On/Off | Off | Merge identical {channel, pitch} notes |
 | Life: Processing | Dedup CC | -1 to 127 | -1 | CC for dedup count modulation (-1=off) |
 | Life: Processing | CA Rule | Presets | Life | Cellular automata rule set |
+| Life: Timing | Conductor | On/Off | Off | Manual evolution via trigger (Enter/MIDI) |
+| Life: Pitch | Microtune | On/Off | Off | Pitch bend based on neighbor count |
+| Life: Pitch | Microtune Amount | 0-100 | 50 | Pitch bend intensity |
 
 Commander commands and keyboard shortcuts write through APVTS, so changes are recorded in DAW automation lanes.
 
@@ -325,6 +328,12 @@ All commands support 2-letter shorthands (first two characters).
 | `dedup` | `dd` | Toggle note deduplication (merge identical notes, scale velocity by count) |
 | `dedupcc:1` | `dc` | Set CC number for dedup count modulation (-1=disabled) |
 | `rule:23/36` | `ru` | Set CA rule in S/B notation (or preset: `life`, `highlife`, `34life`, `seeds`, `diamoeba`, `daynight`, `replicator`, `2x2`) |
+| `conductor` | `cn` | Toggle conductor mode (manual evolution) |
+| `microtune` | `mt` | Toggle microtuning pitch bend |
+| `microtune:75` | `mt` | Set microtune amount (0-100) |
+| `loop:8` | `lp` | Arm loop recording for N generations (auto-plays when done) |
+| `loop:stop` | `lp` | Stop loop playback |
+| `loop` | `lp` | Toggle loop playback on/off |
 | `reset` | -- | Reset to initial state |
 
 The `$` (self) operator also sends commands through the commander. For example, `$groove:75;25` will set the groove when the `$` operator is banged.
@@ -439,6 +448,42 @@ By default, Life mode uses Conway's Game of Life (B3/S23). You can change the ru
 
 Custom rules: `rule:23/36` — digits before `/` are survival counts, after `/` are birth counts.
 
+### Conductor Mode
+
+**Conductor mode** (`conductor` or `Cmd+T`) gives you manual control over when the grid evolves. Instead of evolving automatically every N frames, the grid only advances when you trigger it:
+
+- **Enter key**: Press Enter to trigger one evolution step
+- **External MIDI**: Any MIDI NoteOn received by the plugin triggers one evolution step — connect a keyboard, sequencer, or another plugin to control the pace externally
+
+When combined with **sequencer mode**, the sequencer continues scanning rows independently at the evolve rate, but the GoL rules (birth/death/survival) only fire on trigger. This lets you keep the rhythmic pulse going while deciding when the pattern should evolve.
+
+Mid-cycle triggers are supported: if you press Enter while the sequencer is mid-scan, the grid evolves immediately without disturbing the current seq phase.
+
+### Microtuning
+
+**Microtuning** (`microtune` or `Cmd+U`) adds pitch bend messages before each note based on how many neighbors that cell has:
+
+- Cells with **2 neighbors** (the GoL equilibrium) get no bend (center = 8192)
+- Cells with **fewer neighbors** bend downward
+- Cells with **more neighbors** bend upward
+- `microtune:75` sets the bend intensity (0-100, default 50)
+
+This creates organic pitch variation tied to the local density of the cellular automaton — isolated cells sound slightly flat while crowded cells sound sharp. The pitch bend is channel-wide (per MIDI spec), so it affects all notes on that channel.
+
+### Generation Loop
+
+**Generation loop** records a sequence of evolution snapshots and loops them back:
+
+1. `loop:8` — arms recording for the next 8 evolutions
+2. As the grid evolves, each generation's grid state and MIDI events are captured
+3. When recording completes, playback starts automatically — the grid cycles through the recorded generations instead of running live GoL rules
+4. `loop:stop` or `Cmd+E` — stops playback and returns to live evolution
+5. `loop` (bare) or `Cmd+E` — toggles playback on/off
+
+The loop stores full grid snapshots (including ratchets and phase notes for seq mode), so playback is faithful to the original recording. Up to 64 generations can be recorded.
+
+Status bar shows `loop:rec 3/8` during recording and `loop:5/8` during playback.
+
 ### Octave Range
 
 Control the octave range with `minoct:N` and `maxoct:N`:
@@ -477,9 +522,12 @@ Patterns are placed with random notes from the current scale, using the active p
 | `Cmd+P` | Enter stamp mode / cycle pattern within category |
 | `Cmd+Shift+P` | Cycle pattern backward within category |
 | `Cmd+]` / `Cmd+[` | Cycle pattern category |
+| `Enter` (conductor) | Trigger evolution |
 | `Enter` (stamp mode) | Place pattern |
 | `Escape` (stamp mode) | Cancel stamp mode |
-| `Cmd+E` | Rotate selection 90° clockwise |
+| `Cmd+E` | Toggle loop playback / Rotate selection 90° clockwise |
+| `Cmd+T` | Toggle conductor mode |
+| `Cmd+U` | Toggle microtuning |
 | `Cmd+Shift+H` | Mirror selection horizontal |
 | `Cmd+Shift+J` | Mirror selection vertical |
 | `Cmd+Up/Down` | Shift octave of selected cells |

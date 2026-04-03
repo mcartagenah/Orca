@@ -195,6 +195,9 @@ private:
             else if (sh == "dd") result.name = "dedup";
             else if (sh == "dc") result.name = "dedupcc";
             else if (sh == "ru") result.name = "rule";
+            else if (sh == "cn") result.name = "conductor";
+            else if (sh == "mt") result.name = "microtune";
+            else if (sh == "lp") result.name = "loop";
         }
         return result;
     }
