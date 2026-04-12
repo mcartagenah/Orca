@@ -152,6 +152,7 @@ To display the list of operators inside of Orca, use `CmdOrCtrl+G`.
 - `>` **humanize**(max): On bang, delays the output bang by a random 0-max frames. State stored in south cell, bang output one cell below.
 - `<` **ratchet**(subdivisions period): On bang, outputs N evenly-spaced bangs over the given period of frames. State stored in south cell, bang output one cell below.
 - `\` **swing**(delay): Alternates between immediate and delayed bangs. Odd bangs pass through instantly, even bangs are delayed by N frames. Uses 3 south cells (toggle, countdown, output).
+- `/` **deflect**: Redirects adjacent movers (N/S/E/W) to point away. Any mover next to `/` gets rewritten to face outward — e.g. `S` to the east of `/` becomes `E`, `S` above `/` becomes `N`. Works as a passive obstacle that redirects instead of destroying. Preserves uppercase/lowercase.
 
 ## MIDI
 
@@ -293,6 +294,8 @@ All commands support 2-letter shorthands (first two characters).
 | `time` | `ti` | Write current time at cursor |
 | `color:f00;0f0;00f` | `cl` | Set theme colors (bLow;bMed;bHigh as hex RGB) |
 | `inject:name` | `in` | Inject cached module at cursor (or `inject:name;x;y`) |
+| `clean` | -- | Remove all movers (N/S/E/W) and bangs (*) from grid (skips halted) |
+| `autoclean` | -- | Toggle auto-clean on transport stop (`autoclean:on`/`off`) |
 
 **Network commands:**
 

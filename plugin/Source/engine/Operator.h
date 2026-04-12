@@ -14,7 +14,7 @@ enum class OpType : uint8_t {
     Bang, Comment,
     Midi, CC, PitchBend, Mono, Osc, Udp, Self,
     Probability, Scale, Buffer, Freeze, Gate, Arp, Markov, Chord,
-    Humanize, Ratchet, SwingGate, Strum,
+    Humanize, Ratchet, SwingGate, Strum, Deflect,
     Null, // digit placeholders
     Count
 };

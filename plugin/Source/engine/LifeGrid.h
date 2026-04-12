@@ -597,7 +597,7 @@ public:
     int minOctave = 0;   // lower octave limit (0-based)
     int maxOctave = 7;   // upper octave limit (0-based)
     int evolveRate = 4;  // evolve every N frames, power-of-2 (1,2,4,8,16,32)
-    int frameCounter = 3; // default to evolveRate-1 so first frame hits cycle boundary
+    int frameCounter = 0;
     bool pulseMode = true;  // false=hold (note-on at birth, note-off at death), true=pulse (retrigger every step)
     bool decay = false;           // unified age system: velocity drops + probability drops with age
     uint8_t minVelocity = 40;    // floor velocity for newborn cells (1-127)
@@ -825,7 +825,7 @@ public:
     bool mirrorForward = true;
 
     // Random permutation table for SeqRandom (row → phase frame mapping)
-    int randomPhase[512]; // maps row group → frame (regenerated each evolution)
+    int randomPhase[512] = {}; // maps row group → frame (regenerated each evolution)
     void shufflePhaseTable() {
         int groups = evolveRate;
         for (int i = 0; i < groups; i++) randomPhase[i] = i;
@@ -1014,6 +1014,9 @@ public:
             eventCount += processRatchets(outEvents, maxEvents);
             if (seqMode != SeqOff)
                 eventCount += processPhaseNotes(frameCounter, outEvents + eventCount, maxEvents - eventCount);
+            // Record mid-cycle evolution to loop if armed
+            if (loopState == LoopRecording)
+                loopRecord(outEvents, eventCount);
             generation++;
             return eventCount;
         }
