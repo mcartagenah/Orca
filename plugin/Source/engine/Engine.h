@@ -143,6 +143,18 @@ public:
                 if (idx >= 0) shadowPorts[idx] = 10; // operator marker
             }
 
+            // Deflector: mark 4 neighbors visually (no ports, render-only)
+            if (op.type == OpType::Deflect) {
+                const int ddx[] = { 0, 1, 0, -1 };
+                const int ddy[] = { -1, 0, 1, 0 };
+                for (int d = 0; d < 4; d++) {
+                    int idx = grid.indexAt(op.x + ddx[d], op.y + ddy[d]);
+                    if (idx >= 0 && shadowPorts[idx] == 0)
+                        shadowPorts[idx] = 2; // input style
+                }
+                continue;
+            }
+
             // Mark ports
             for (int p = 0; p < op.portCount; p++) {
                 if (!op.ports[p].active) continue;

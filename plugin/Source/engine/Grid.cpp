@@ -207,6 +207,36 @@ void Grid::parse() {
 }
 
 void Grid::operate() {
+    // Pre-pass: deflectors redirect adjacent movers before anything moves
+    // Must update both the grid cell AND the OperatorInstance (type + glyph)
+    for (int i = 0; i < runtimeCount; i++) {
+        auto& def = runtime[i];
+        if (def.type != OpType::Deflect) continue;
+        for (int j = 0; j < runtimeCount; j++) {
+            auto& mover = runtime[j];
+            int rx = mover.x - def.x, ry = mover.y - def.y;
+            if ((rx == 0) == (ry == 0)) continue; // must be exactly 1 axis apart
+            if (rx < -1 || rx > 1 || ry < -1 || ry > 1) continue;
+            char gl = (mover.glyph >= 'A' && mover.glyph <= 'Z')
+                      ? (char)(mover.glyph + 32) : mover.glyph;
+            if (gl != 'n' && gl != 'e' && gl != 's' && gl != 'w') continue;
+            bool isUp = (mover.glyph >= 'A' && mover.glyph <= 'Z');
+            OpType newType; char newGlyph;
+            if (rx == 0 && ry == -1) {      // mover is north → point north
+                newType = OpType::N; newGlyph = isUp ? 'N' : 'n';
+            } else if (rx == 1 && ry == 0) { // mover is east → point east
+                newType = OpType::E; newGlyph = isUp ? 'E' : 'e';
+            } else if (rx == 0 && ry == 1) { // mover is south → point south
+                newType = OpType::S; newGlyph = isUp ? 'S' : 's';
+            } else {                          // mover is west → point west
+                newType = OpType::W; newGlyph = isUp ? 'W' : 'w';
+            }
+            mover.type = newType;
+            mover.glyph = newGlyph;
+            write(mover.x, mover.y, newGlyph);
+        }
+    }
+    // Main pass: all operators
     for (int i = 0; i < runtimeCount; i++) {
         auto& op = runtime[i];
         if (lockAt(op.x, op.y)) continue;

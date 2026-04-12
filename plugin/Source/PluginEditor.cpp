@@ -170,54 +170,61 @@ void GridComponent::paint(juce::Graphics& g) {
                    getWidth() - 8, 14, juce::Justification::centredLeft);
     } else if (engine.lifeMode) {
         // Life mode status bar
-        // Line 1: LIFE  ch:X  oct:X  cursor_pos  generation
+        // Line 1: mode, real-time state, musical context
         {
             g.setColour(juce::Colour(channelColorValues[engine.paintChannel % 16]));
             juce::String line1;
-            line1 << "LIFE  ch:" << (int)engine.paintChannel
+            line1 << "LIFE   " << cursorX << "," << cursorY
+                  << "   gen:" << engine.shadowF
+                  << "  pop:" << engine.lifeGrid.population()
+                  << "  ch:" << (int)engine.paintChannel
                   << "  oct:" << (int)engine.paintOctave
                   << "  " << orca::LifeGrid::rootNoteName(engine.lifeGrid.rootNote)
                   << " " << orca::LifeGrid::scaleName(engine.lifeGrid.currentScale)
                   << "  " << (engine.lifeGrid.pulseMode ? "pulse" : "hold")
-                  << "  rate:" << engine.lifeGrid.evolveRate
-                  << (engine.lifeGrid.decay ? juce::String("  decay:") + juce::String((int)engine.lifeGrid.minVelocity) + "v/" + juce::String(engine.lifeGrid.minProb) + "%" : juce::String())
-                  << (engine.lifeGrid.maxNotes > 0 ? juce::String("  max:") + juce::String(engine.lifeGrid.maxNotes) : juce::String())
-                  << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
+                  << "  rate:" << engine.lifeGrid.evolveRate;
+            line1 << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
                       engine.lifeGrid.seqMode == orca::LifeGrid::SeqReverse ? "  seq:rev" :
                       engine.lifeGrid.seqMode == orca::LifeGrid::SeqMirror ? "  seq:mirror" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "")
-                  << (engine.lifeGrid.lockOctave ? "  lockoct" : "")
-                  << (engine.lifeGrid.chordDegreeCount > 0 ? juce::String("  chord:") + engine.lifeGrid.chordDegreesString() : juce::String())
-                  << (engine.lifeGrid.dedup ? juce::String("  dedup") + (engine.lifeGrid.dedupCC >= 0 ? juce::String(" cc:") + juce::String(engine.lifeGrid.dedupCC) : juce::String()) : juce::String())
-                  << (engine.lifeGrid.conductorMode ? "  conductor" : "")
-                  << (engine.lifeGrid.microtuning ? juce::String("  microtune:") + juce::String(engine.lifeGrid.microtuneAmount) : juce::String())
-                  << (engine.lifeGrid.loopState == orca::LifeGrid::LoopRecording ?
-                      juce::String("  loop:rec ") + juce::String(engine.lifeGrid.loopHead) + "/" + juce::String(engine.lifeGrid.loopLength) :
-                      engine.lifeGrid.loopState == orca::LifeGrid::LoopPlaying ?
-                      juce::String("  loop:") + juce::String(engine.lifeGrid.loopHead + 1) + "/" + juce::String(engine.lifeGrid.loopRecorded) :
-                      juce::String())
-                  << (strcmp(engine.lifeGrid.ruleString, "23/3") != 0 ? juce::String("  rule:") + juce::String(engine.lifeGrid.ruleString) : juce::String())
-                  << ((engine.lifeGrid.minOctave != 0 || engine.lifeGrid.maxOctave != 7) ?
-                      juce::String("  oct:") + juce::String(engine.lifeGrid.minOctave) + "-" + juce::String(engine.lifeGrid.maxOctave) :
-                      juce::String())
-                  << "   " << cursorX << "," << cursorY
-                  << "   gen:" << engine.shadowF;
-            {
-            }
-            if (stampMode)
-                line1 << "   STAMP: " << stampCategories[stampCategory].name
-                      << " > " << orca::builtInPatterns[stampIndex].name;
+                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "");
+            if (engine.lifeGrid.conductorMode) line1 << "  cond";
+            if (engine.lifeGrid.chordDegreeCount > 0)
+                line1 << "  chd:" << engine.lifeGrid.chordDegreesString();
+            if (engine.lifeGrid.maxNotes > 0)
+                line1 << "  max:" << engine.lifeGrid.maxNotes;
             g.drawText(line1, 4, (int)statusY, getWidth() - 8, 14,
                        juce::Justification::centredLeft);
         }
-        // Line 2: grid_size  population
+        // Line 2: grid info, cursor, network, active modifiers (or stamp overlay)
         {
             g.setColour(fLow);
             juce::String line2;
-            line2 << gridW << "x" << gridH
-                  << "   pop:" << engine.lifeGrid.population()
-                  << "   udp:" << processor.udpOutputPort
-                  << "  osc:" << processor.oscOutputPort;
+            if (stampMode) {
+                line2 << "STAMP: " << stampCategories[stampCategory].name
+                      << " > " << orca::builtInPatterns[stampIndex].name;
+            } else {
+                line2 << gridW << "x" << gridH
+                      << "  udp:" << processor.udpOutputPort
+                      << "  osc:" << processor.oscOutputPort;
+                if (engine.lifeGrid.minOctave != 0 || engine.lifeGrid.maxOctave != 7)
+                    line2 << "  oct:" << engine.lifeGrid.minOctave << "-" << engine.lifeGrid.maxOctave;
+                if (engine.lifeGrid.decay)
+                    line2 << "  dk:" << (int)engine.lifeGrid.minVelocity << "v/" << engine.lifeGrid.minProb << "%";
+                if (engine.lifeGrid.dedup) {
+                    line2 << "  dd";
+                    if (engine.lifeGrid.dedupCC >= 0)
+                        line2 << " cc:" << engine.lifeGrid.dedupCC;
+                }
+                if (engine.lifeGrid.lockOctave) line2 << "  loct";
+                if (engine.lifeGrid.microtuning)
+                    line2 << "  mt:" << engine.lifeGrid.microtuneAmount;
+                if (engine.lifeGrid.loopState == orca::LifeGrid::LoopRecording)
+                    line2 << "  lp:rec " << engine.lifeGrid.loopHead << "/" << engine.lifeGrid.loopLength;
+                else if (engine.lifeGrid.loopState == orca::LifeGrid::LoopPlaying)
+                    line2 << "  lp:" << (engine.lifeGrid.loopHead + 1) << "/" << engine.lifeGrid.loopRecorded;
+                if (strcmp(engine.lifeGrid.ruleString, "23/3") != 0)
+                    line2 << "  rl:" << engine.lifeGrid.ruleString;
+            }
             g.drawText(line2, 4, (int)(statusY + 14), getWidth() - 8, 14,
                        juce::Justification::centredLeft);
         }
@@ -245,7 +252,7 @@ void GridComponent::paint(juce::Graphics& g) {
             } else {
                 line1 << operatorName(curGlyph);
             }
-            line1 << "   " << cursorX << "," << cursorY
+            line1 << "  " << cursorX << "," << cursorY
                   << "   " << engine.shadowF << "f";
             g.drawText(line1, 4, (int)statusY, getWidth() - 8, 14,
                        juce::Justification::centredLeft);
@@ -265,7 +272,9 @@ void GridComponent::paint(juce::Graphics& g) {
             }
             if (!injectCache.empty())
                 line2 << "   " << (int)injectCache.size() << " mods";
-            line2 << "   udp:" << processor.udpOutputPort
+            if (processor.autoClean)
+                line2 << "  autoclean";
+            line2 << "  udp:" << processor.udpOutputPort
                   << "  osc:" << processor.oscOutputPort;
             g.drawText(line2, 4, (int)(statusY + 14), getWidth() - 8, 14,
                        juce::Justification::centredLeft);
@@ -1903,6 +1912,36 @@ bool Commander::trigger(OrcaProcessor& processor, GridComponent& editor) {
             for (int i = 0; i < timeStr.length(); i++)
                 grid.write(editor.cursorX + i, editor.cursorY, (char)timeStr[i]);
         }
+    }
+    else if (!isLife && cmd.name == "clean") {
+        // Remove all movers (N/n/S/s/E/e/W/w) and bangs (*) from the grid
+        // Skip cells halted by H above or after a # comment on the same row
+        const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+        for (int y = 0; y < grid.h; y++) {
+            bool inComment = false;
+            for (int x = 0; x < grid.w; x++) {
+                char g = grid.glyphAt(x, y);
+                if (g == '#') { inComment = true; continue; }
+                if (inComment) continue;
+                if (g == 'N' || g == 'n' || g == 'S' || g == 's' ||
+                    g == 'E' || g == 'e' || g == 'W' || g == 'w' || g == '*') {
+                    if (y > 0) {
+                        char above = grid.glyphAt(x, y - 1);
+                        if (above == 'H' || above == 'h') continue;
+                    }
+                    grid.write(x, y, '.');
+                }
+            }
+        }
+    }
+    else if (!isLife && cmd.name == "autoclean") {
+        auto val = cmd.value.toLowerCase().trim();
+        if (val == "on" || val == "1")
+            processor.autoClean = true;
+        else if (val == "off" || val == "0")
+            processor.autoClean = false;
+        else
+            processor.autoClean = !processor.autoClean;
     }
     else if (cmd.name == "color") {
         // color:f_low;f_med;f_high (hex RGB values)

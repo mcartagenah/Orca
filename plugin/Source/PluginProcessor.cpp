@@ -124,12 +124,18 @@ int OrcaProcessor::findChordPresetIndex(const juce::String& degrees) const {
 
 void OrcaProcessor::syncParamsToLifeGrid() {
     auto& lg = engine.lifeGrid;
-    lg.evolveRate   = lifeRateParam->get();
+    int newRate     = lifeRateParam->get();
+    bool rateChanged = (newRate != lg.evolveRate);
+    lg.evolveRate   = newRate;
     lg.decay        = lifeDecayParam->get();
     lg.minVelocity  = static_cast<uint8_t>(lifeMinVelParam->get());
     lg.minProb      = lifeMinProbParam->get();
     lg.maxNotes     = lifeMaxNotesParam->get();
-    lg.seqMode      = static_cast<orca::LifeGrid::SeqMode>(lifeSeqParam->getIndex());
+    auto newSeqMode  = static_cast<orca::LifeGrid::SeqMode>(lifeSeqParam->getIndex());
+    if (newSeqMode == orca::LifeGrid::SeqRandom &&
+        (lg.seqMode != orca::LifeGrid::SeqRandom || rateChanged))
+        lg.shufflePhaseTable();
+    lg.seqMode      = newSeqMode;
     lg.lockOctave   = lifeLockOctParam->get();
     lg.dedup        = lifeDedupParam->get();
     lg.dedupCC      = lifeDedupCCParam->get();
@@ -291,6 +297,26 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             grooveIndex = 0;
             wasPlaying = false;
             // Silence Life mode notes on stop and reset sequencer phase
+            // Auto-clean movers/bangs from Orca grid on stop
+            if (!engine.lifeMode && autoClean) {
+                auto& g = engine.grid;
+                for (int y = 0; y < g.h; y++) {
+                    bool inComment = false;
+                    for (int x = 0; x < g.w; x++) {
+                        char ch = g.glyphAt(x, y);
+                        if (ch == '#') { inComment = true; continue; }
+                        if (inComment) continue;
+                        if (ch == 'N' || ch == 'n' || ch == 'S' || ch == 's' ||
+                            ch == 'E' || ch == 'e' || ch == 'W' || ch == 'w' || ch == '*') {
+                            if (y > 0) {
+                                char above = g.glyphAt(x, y - 1);
+                                if (above == 'H' || above == 'h') continue;
+                            }
+                            g.write(x, y, '.');
+                        }
+                    }
+                }
+            }
             if (engine.lifeMode) {
                 orca::MidiEvent events[orca::kMaxEvents];
                 int eventCount = 0;
@@ -310,6 +336,11 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             }
         }
         return;
+    }
+    // On transport start: reset frameCounter so first frame hits cycle boundary immediately
+    if (!wasPlaying && engine.lifeMode) {
+        engine.lifeGrid.frameCounter = engine.lifeGrid.evolveRate - 1;
+        engine.lifeGrid.firstEvolution = true;
     }
     // Retrigger alive Life notes on transport start (skip in seq mode — let phase handle it)
     if (!wasPlaying && engine.lifeMode && engine.lifeGrid.seqMode == orca::LifeGrid::SeqOff) {

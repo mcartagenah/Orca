@@ -92,6 +92,7 @@ public:
     juce::SpinLock engineLock;
     std::atomic<bool> transportRunning { false };
     std::atomic<bool> standalonePlay { false };
+    bool autoClean = false; // remove movers/bangs on transport stop
 
     // Pending MIDI events from Life mode transitions (UI thread → audio thread)
     static constexpr int kMaxPendingLifeEvents = 64;

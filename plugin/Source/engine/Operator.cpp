@@ -1029,6 +1029,9 @@ void OperatorInstance::operation(Grid& grid, EngineIO& io, bool force,
         break;
     }
 
+    case OpType::Deflect: // / — uturn: deflection handled in move(), no action needed
+        break;
+
     case OpType::Null:
         break;
 
@@ -1048,7 +1051,7 @@ bool isOperatorGlyph(char g) {
         case '?': case '%': case '=': case ';':
         case '$': case '~': case '^': case '{':
         case '}': case '|': case '&': case '@':
-        case '[': case ']': case '>': case '<': case '\\':
+        case '[': case ']': case '>': case '<': case '\\': case '/':
             return true;
         default:
             return false;
@@ -1366,6 +1369,10 @@ bool createOperator(OperatorInstance& op, char glyph, int x, int y, bool isPassi
         op.init(OpType::SwingGate, x, y, '\\', true);
         op.addPort(0, 1, 0, false, false, false, false, 0, 0, 35);  // delay (east)
         // state cells (toggle, countdown, bang output) at (0,1)-(0,3) managed directly in operation()
+        return true;
+
+    case '/':
+        op.init(OpType::Deflect, x, y, '/', true);
         return true;
     }
 
