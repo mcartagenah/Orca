@@ -8,6 +8,10 @@ This application **is not a synthesizer, but a livecoding environment** capable 
 
 If you need **help**, visit the [chatroom](https://discord.gg/F7W98pXKd7), the [mailing list](https://lists.sr.ht/~rabbits/orca), join the [forum](https://llllllll.co/t/orca-live-coding-tool/17689) or watch a [tutorial](https://www.youtube.com/watch?v=ktcWOLeWP-g).
 
+Orca was created by [Hundred Rabbits](https://100r.co/) — this fork adds a native AU/VST3 plugin with Life mode, new operators, and other enhancements. If you enjoy these additions, you can support my work:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X7X31XSQK3)
+
 - [Download builds](https://hundredrabbits.itch.io/orca), available for **Linux, Windows and OSX**.
 - Use [in your browser](https://hundredrabbits.github.io/Orca/), requires **webMidi**.
 - Use [in a terminal](https://git.sr.ht/~rabbits/orca), written in C.
