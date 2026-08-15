@@ -110,7 +110,8 @@ private:
         orca::LifeGrid::SeqMode seqMode = orca::LifeGrid::SeqOff;
         orca::LifeGrid::ScaleType currentScale = orca::LifeGrid::Chromatic;
         orca::LifeGrid::LoopState loopState = orca::LifeGrid::LoopOff;
-        int evolveRate = 1, frameCounter = 0, wrapH = 1;
+        int evolveRate = 1, frameCounter = 0, wrapW = 1, wrapH = 1;
+        int euclidPulses = 3;
         int rootNote = 0, populationCount = 0;
         int minOctave = 0, maxOctave = 7;
         int minProb = 10, maxNotes = 0, dedupCC = -1;
@@ -118,12 +119,16 @@ private:
         int chordDegreeCount = 0;
         int chordDegrees[7] = {};
         int randomPhase[512] = {};
+        bool euclidPattern[512] = {};
         bool mirrorForward = true, pulseMode = true, conductorMode = false;
+        bool seqHorizontal = false;
         bool decay = false, dedup = false, lockOctave = false, microtuning = false;
         uint8_t minVelocity = 40;
         char ruleString[16] = "23/3";
 
-        int phaseForRow(int y) const;
+        int phaseFor(int position, int total) const;
+        int phaseForRow(int y) const { return phaseFor(y, wrapH); }
+        int phaseForCol(int x) const { return phaseFor(x, wrapW); }
         int population() const { return populationCount; }
         juce::String chordDegreesString() const;
     };

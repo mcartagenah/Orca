@@ -34,15 +34,17 @@ GridComponent::~GridComponent() {
     delete[] lifeHistory;
 }
 
-int GridComponent::LifeRenderState::phaseForRow(int y) const {
-    if (seqMode == orca::LifeGrid::SeqOff || evolveRate <= 1 || wrapH <= 0) return 0;
-    int forwardPhase = y * evolveRate / wrapH;
+int GridComponent::LifeRenderState::phaseFor(int position, int total) const {
+    if (seqMode == orca::LifeGrid::SeqOff || evolveRate <= 1 || total <= 0) return 0;
+    int forwardPhase = position * evolveRate / total;
     switch (seqMode) {
         case orca::LifeGrid::SeqForward: return forwardPhase;
         case orca::LifeGrid::SeqReverse: return (evolveRate - 1) - forwardPhase;
         case orca::LifeGrid::SeqMirror:
             return mirrorForward ? forwardPhase : (evolveRate - 1) - forwardPhase;
         case orca::LifeGrid::SeqRandom: return randomPhase[forwardPhase % evolveRate];
+        case orca::LifeGrid::SeqEuclid:
+            return euclidPattern[forwardPhase % evolveRate] ? forwardPhase : -1;
         default: return 0;
     }
 }
@@ -79,7 +81,9 @@ void GridComponent::captureRenderState() {
     snapshot.loopState = life.loopState;
     snapshot.evolveRate = life.evolveRate;
     snapshot.frameCounter = life.frameCounter;
+    snapshot.wrapW = life.wrapW;
     snapshot.wrapH = life.wrapH;
+    snapshot.euclidPulses = life.euclidPulses;
     snapshot.rootNote = life.rootNote;
     snapshot.populationCount = life.population();
     snapshot.minOctave = life.minOctave;
@@ -95,9 +99,11 @@ void GridComponent::captureRenderState() {
     snapshot.chordDegreeCount = life.chordDegreeCount;
     memcpy(snapshot.chordDegrees, life.chordDegrees, sizeof(snapshot.chordDegrees));
     memcpy(snapshot.randomPhase, life.randomPhase, sizeof(snapshot.randomPhase));
+    memcpy(snapshot.euclidPattern, life.euclidPattern, sizeof(snapshot.euclidPattern));
     snapshot.mirrorForward = life.mirrorForward;
     snapshot.pulseMode = life.pulseMode;
     snapshot.conductorMode = life.conductorMode;
+    snapshot.seqHorizontal = life.seqHorizontal;
     snapshot.decay = life.decay;
     snapshot.dedup = life.dedup;
     snapshot.lockOctave = life.lockOctave;
