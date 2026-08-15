@@ -622,6 +622,7 @@ Patterns are placed with random notes from the current scale, using the active p
 | `Enter` (stamp mode) | Place pattern |
 | `Escape` (stamp mode) | Cancel stamp mode |
 | `Cmd+E` | Toggle recorded-loop playback |
+| `Cmd+Shift+E` | Rotate selection 90° clockwise |
 | `Cmd+T` | Toggle conductor mode |
 | `Cmd+U` | Toggle microtuning |
 | `Cmd+Shift+H` | Mirror selection horizontal |

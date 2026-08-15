@@ -1027,8 +1027,8 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && processor.engine.lifeMode && (selectW > 1 || selectH > 1)) {
         auto& lg = processor.engine.lifeGrid;
 
-        // Cmd+E: rotate selection 90° clockwise
-        if (code == 'E') {
+        // Cmd+Shift+E: rotate selection 90° clockwise
+        if (shift && code == 'E') {
             pushLifeHistory();
             orca::LifeCell temp[orca::kMaxGridSize];
             for (int dy = 0; dy < selectH; dy++)
