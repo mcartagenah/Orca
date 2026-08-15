@@ -28,6 +28,14 @@ void GridComponent::visibilityChanged() {
         grabKeyboardFocus();
 }
 
+void GridComponent::restoreKeyboardFocusAsync() {
+    juce::Component::SafePointer<GridComponent> safeThis(this);
+    juce::MessageManager::callAsync([safeThis] {
+        if (safeThis != nullptr)
+            safeThis->grabKeyboardFocus();
+    });
+}
+
 GridComponent::~GridComponent() {
     stopTimer();
     fileChooser.reset();
@@ -1154,6 +1162,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
                     if (content.isNotEmpty())
                         injectCache[name] = content;
                 }
+                restoreKeyboardFocusAsync();
             });
         return true;
     }
@@ -1172,6 +1181,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
                     else if (result.hasFileExtension("life"))
                         loadLifeFile(result);
                 }
+                restoreKeyboardFocusAsync();
             });
         return true;
     }
@@ -1618,6 +1628,7 @@ void GridComponent::saveAs() {
                 else
                     saveOrcaFile(result.withFileExtension("orca"));
             }
+            restoreKeyboardFocusAsync();
         });
 }
 

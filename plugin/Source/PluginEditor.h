@@ -148,6 +148,7 @@ private:
 
     RenderState renderState;
     void captureRenderState();
+    void restoreKeyboardFocusAsync();
 
     float fontSize = 12.0f;
     float tileW = 10.0f;
