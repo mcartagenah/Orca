@@ -9,8 +9,6 @@ Before editing:
 1. Run `git status --short` and preserve all existing changes. The repository is often used with in-progress plugin work in the working tree.
 2. Read the relevant section of `README.md`; it is the best user-facing description of current behavior.
 3. Inspect recent commits touching the same subsystem. Recent fork work is concentrated under `plugin/` and usually updates `README.md` alongside behavior.
-4. Treat `PLAN.md` and `.claude/plans/`, when present, as historical design notes, not current specifications. They are local/ignored context, predate several implemented features, and may contradict the code. For example, the original plugin plan says OSC/UDP are no-ops, while the current plugin implements both.
-5. Do not modify `.claude/settings.local.json`, local plans, or other agent-specific files unless the user asks.
 
 Do not overwrite, reformat, stage, or revert unrelated user changes. Do not commit or push unless explicitly requested.
 
