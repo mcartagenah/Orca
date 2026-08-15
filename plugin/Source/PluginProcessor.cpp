@@ -384,11 +384,15 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
 
     // Helper to dispatch MIDI events from a step
-    auto dispatchEvents = [&](int sampleOffset) {
+    auto dispatchEvents = [&](int sampleOffset, int syncedFrame = -1) -> bool {
         orca::MidiEvent events[orca::kMaxEvents];
         int eventCount;
         {
-            const juce::SpinLock::ScopedLockType lock(engineLock);
+            const juce::SpinLock::ScopedTryLockType lock(engineLock);
+            if (!lock.isLocked())
+                return false;
+            if (syncedFrame >= 0)
+                engine.grid.f = syncedFrame;
             eventCount = engine.step(events, orca::kMaxEvents);
         }
         for (int i = 0; i < eventCount; i++) {
@@ -444,6 +448,7 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             }
             engine.io.clearOsc();
         }
+        return true;
     };
 
     if (hasPpq) {
@@ -486,10 +491,10 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             int grooveFrame = cycleNum * localGrooveLength + frameInCycle;
 
             if (grooveFrame != lastPpqFrame) {
-                lastPpqFrame = grooveFrame;
-                grooveIndex = frameInCycle; // update for UI debug display
-                engine.grid.f = grooveFrame; // sync frame counter to DAW
-                dispatchEvents(s);
+                if (dispatchEvents(s, grooveFrame)) {
+                    lastPpqFrame = grooveFrame;
+                    grooveIndex = frameInCycle; // update for UI debug display
+                }
             }
         }
     } else {
@@ -515,10 +520,13 @@ void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
             int samplesToNextInt = static_cast<int>(std::ceil(samplesToNext));
 
             if (samplePos + samplesToNextInt <= numSamples) {
+                if (!dispatchEvents(samplePos + samplesToNextInt)) {
+                    frameAccumulator = currentStep;
+                    break;
+                }
                 samplePos += samplesToNextInt;
                 frameAccumulator = 0.0;
                 grooveIndex = (grooveIndex + 1) % localGrooveLength;
-                dispatchEvents(samplePos);
             } else {
                 frameAccumulator += static_cast<double>(numSamples - samplePos);
                 break;
