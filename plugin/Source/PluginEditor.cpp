@@ -1638,6 +1638,8 @@ void GridComponent::saveLifeFile(const juce::File& file) {
             << " minprob:" << lg.minProb
             << " maxnotes:" << lg.maxNotes
             << " seq:" << static_cast<int>(lg.seqMode)
+            << " euclid:" << lg.euclidPulses
+            << " orient:" << (lg.seqHorizontal ? "h" : "v")
             << " lockoct:" << (lg.lockOctave ? 1 : 0)
             << " chord:" << lg.chordDegreesString()
             << " dedup:" << (lg.dedup ? 1 : 0)
@@ -1687,7 +1689,7 @@ void GridComponent::loadLifeFile(const juce::File& file) {
     h = juce::jlimit(1, orca::kMaxGridH, h);
 
     // Parse optional settings from header
-    int scale = 0, root = 0, rate = 4, pulse = 0, decayVal = 0, minvel = 40, minprob = 10, maxnotes = 0, seqVal = 0, lockoct = 0, dedupVal = 0, dedupcc = -1, minoct = 0, maxoct = 7;
+    int scale = 0, root = 0, rate = 4, pulse = 0, decayVal = 0, minvel = 40, minprob = 10, maxnotes = 0, seqVal = 0, euclid = 3, seqHoriz = 0, lockoct = 0, dedupVal = 0, dedupcc = -1, minoct = 0, maxoct = 7;
     juce::String chordStr = "off";
     juce::String ruleStr = "23/3";
     for (int i = 3; i < tokens.size(); i++) {
@@ -1700,6 +1702,8 @@ void GridComponent::loadLifeFile(const juce::File& file) {
         else if (tokens[i].startsWith("minprob:")) minprob = tokens[i].substring(8).getIntValue();
         else if (tokens[i].startsWith("maxnotes:")) maxnotes = tokens[i].substring(9).getIntValue();
         else if (tokens[i].startsWith("seq:")) seqVal = tokens[i].substring(4).getIntValue();
+        else if (tokens[i].startsWith("euclid:")) euclid = tokens[i].substring(7).getIntValue();
+        else if (tokens[i].startsWith("orient:")) seqHoriz = tokens[i].substring(7).equalsIgnoreCase("h") ? 1 : 0;
         else if (tokens[i].startsWith("lockoct:")) lockoct = tokens[i].substring(8).getIntValue();
         else if (tokens[i].startsWith("chord:")) chordStr = tokens[i].substring(6);
         else if (tokens[i].startsWith("dedup:")) dedupVal = tokens[i].substring(6).getIntValue();
@@ -1733,7 +1737,10 @@ void GridComponent::loadLifeFile(const juce::File& file) {
     processor.lifeMaxNotesParam->setValueNotifyingHost(
         processor.lifeMaxNotesParam->convertTo0to1(juce::jmax(0, maxnotes)));
     processor.lifeSeqParam->setValueNotifyingHost(
-        processor.lifeSeqParam->convertTo0to1(juce::jlimit(0, 4, seqVal)));
+        processor.lifeSeqParam->convertTo0to1(juce::jlimit(0, 5, seqVal)));
+    processor.lifeEuclidParam->setValueNotifyingHost(
+        processor.lifeEuclidParam->convertTo0to1(juce::jlimit(1, 32, euclid)));
+    processor.lifeSeqHorizParam->setValueNotifyingHost(seqHoriz != 0 ? 1.0f : 0.0f);
     processor.lifeLockOctParam->setValueNotifyingHost(lockoct != 0 ? 1.0f : 0.0f);
     {
         int chordIdx = processor.findChordPresetIndex(chordStr);

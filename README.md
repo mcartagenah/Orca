@@ -641,7 +641,7 @@ Classic `.orca` files are plain-text grids. Life mode uses a separate text-based
 
 Save the active format with `Cmd+S`; open either format with `Cmd+O` or drag it onto the plugin. A `.life` file stores grid dimensions, live-cell metadata, scale, root, evolution rate, pulse mode, decay controls, maximum-note limit, sequencer mode, octave lock and range, chord filter, deduplication settings, and the cellular-automata rule. Settings absent from older files use defaults when loaded.
 
-The current `.life` loader restores Off through Random sequencer modes. It does not yet round-trip Euclid mode or store the paint cursor, conductor/microtuning state, generation loops, Euclid pulse count, or scan orientation. DAW project state stores automatable parameters separately through the host.
+The `.life` format round-trips sequencer mode, Euclid pulse count, and scan orientation. It does not yet store the paint cursor, conductor/microtuning state, or generation loops. DAW project state stores automatable parameters separately through the host.
 
 ## Reference tables
 
