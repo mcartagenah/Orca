@@ -489,7 +489,7 @@ void GridComponent::resized() {
                 newCells[x + newW * y] = buf[x + grid.w * y];
             }
         }
-        processor.engine.load(newW, newH, newCells, grid.f);
+        processor.engine.load(newW, newH, newCells, newW * newH, grid.f);
     }
 
     // Update Life grid wrap boundary to match visible area
@@ -1357,7 +1357,8 @@ void GridComponent::undo() {
     auto& snap = history[historyPos];
     {
         const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-        processor.engine.load(snap.w, snap.h, snap.cells, processor.engine.grid.f);
+        processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
+                              processor.engine.grid.f);
     }
     historyPos--;
 }
@@ -1367,7 +1368,8 @@ void GridComponent::redo() {
     historyPos++;
     auto& snap = history[historyPos];
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-    processor.engine.load(snap.w, snap.h, snap.cells, processor.engine.grid.f);
+    processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
+                          processor.engine.grid.f);
 }
 
 void GridComponent::pushLifeHistory() {
@@ -1467,7 +1469,7 @@ void GridComponent::loadOrcaFile(const juce::File& file) {
 
     {
         const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-        processor.engine.load(w, h, buf, 0);
+        processor.engine.load(w, h, buf, w * h, 0);
     }
     currentFile = file;
 

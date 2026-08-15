@@ -607,7 +607,8 @@ void OrcaProcessor::setStateInformation(const void* data, int sizeInBytes) {
         auto gridStr = xml->getStringAttribute("grid");
         {
             const juce::SpinLock::ScopedLockType lock(engineLock);
-            engine.load(w, h, gridStr.toRawUTF8(), f);
+            engine.load(w, h, gridStr.toRawUTF8(),
+                        gridStr.getNumBytesAsUTF8(), f);
 
             // Restore Life mode state
             engine.paintChannel = static_cast<uint8_t>(juce::jlimit(

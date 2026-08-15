@@ -24,7 +24,7 @@ public:
     Grid();
 
     void reset(int newW = 25, int newH = 25);
-    void load(int newW, int newH, const char* s, int frame = 0);
+    void load(int newW, int newH, const char* s, int sourceLength, int frame = 0);
     void run();
 
     // Grid access

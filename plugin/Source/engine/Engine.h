@@ -41,8 +41,8 @@ public:
         updateShadow();
     }
 
-    void load(int w, int h, const char* s, int f = 0) {
-        grid.load(w, h, s, f);
+    void load(int w, int h, const char* s, int sourceLength, int f = 0) {
+        grid.load(w, h, s, sourceLength, f);
         updateShadow();
     }
 
