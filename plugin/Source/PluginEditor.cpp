@@ -1426,19 +1426,34 @@ void GridComponent::pushHistory() {
 
 void GridComponent::undo() {
     if (historyPos < 0 || historyCount == 0) return;
-    auto& snap = history[historyPos];
-    {
-        const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-        processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
-                              processor.engine.grid.f);
+    const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+
+    // The history stores pre-edit states. Preserve the current post-edit state
+    // the first time we move backward so redo has a destination to restore.
+    if (historyPos == historyCount - 1) {
+        if (historyCount >= kMaxHistory) {
+            for (int i = 0; i < kMaxHistory - 1; i++)
+                history[i] = history[i + 1];
+            historyCount = kMaxHistory - 1;
+            historyPos--;
+        }
+        auto& current = history[historyCount++];
+        auto& grid = processor.engine.grid;
+        memcpy(current.cells, grid.cells, grid.w * grid.h);
+        current.w = grid.w;
+        current.h = grid.h;
     }
+
+    auto& snap = history[historyPos];
+    processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
+                          processor.engine.grid.f);
     historyPos--;
 }
 
 void GridComponent::redo() {
-    if (historyPos + 1 >= historyCount) return;
+    if (historyPos + 2 >= historyCount) return;
     historyPos++;
-    auto& snap = history[historyPos];
+    auto& snap = history[historyPos + 1];
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
     processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
                           processor.engine.grid.f);
@@ -1468,19 +1483,37 @@ void GridComponent::pushLifeHistory() {
 
 void GridComponent::undoLife() {
     if (!lifeHistory || lifeHistoryPos < 0 || lifeHistoryCount == 0) return;
-    auto& snap = lifeHistory[lifeHistoryPos];
-    lifeHistoryPos--;
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
     auto& lg = processor.engine.lifeGrid;
+
+    if (lifeHistoryPos == lifeHistoryCount - 1) {
+        if (lifeHistoryCount >= kMaxLifeHistory) {
+            for (int i = 0; i < kMaxLifeHistory - 1; i++)
+                lifeHistory[i] = lifeHistory[i + 1];
+            lifeHistoryCount = kMaxLifeHistory - 1;
+            lifeHistoryPos--;
+        }
+        auto& current = lifeHistory[lifeHistoryCount++];
+        memcpy(current.cells, lg.cells, sizeof(orca::LifeCell) * lg.w * lg.h);
+        current.w = lg.w;
+        current.h = lg.h;
+    }
+
+    auto& snap = lifeHistory[lifeHistoryPos];
+    if (lg.w != snap.w || lg.h != snap.h)
+        lg.resize(snap.w, snap.h);
     memcpy(lg.cells, snap.cells, sizeof(orca::LifeCell) * snap.w * snap.h);
+    lifeHistoryPos--;
 }
 
 void GridComponent::redoLife() {
-    if (!lifeHistory || lifeHistoryPos + 1 >= lifeHistoryCount) return;
+    if (!lifeHistory || lifeHistoryPos + 2 >= lifeHistoryCount) return;
     lifeHistoryPos++;
-    auto& snap = lifeHistory[lifeHistoryPos];
+    auto& snap = lifeHistory[lifeHistoryPos + 1];
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
     auto& lg = processor.engine.lifeGrid;
+    if (lg.w != snap.w || lg.h != snap.h)
+        lg.resize(snap.w, snap.h);
     memcpy(lg.cells, snap.cells, sizeof(orca::LifeCell) * snap.w * snap.h);
 }
 
