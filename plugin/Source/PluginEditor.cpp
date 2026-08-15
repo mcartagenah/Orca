@@ -30,9 +30,13 @@ void GridComponent::visibilityChanged() {
 
 void GridComponent::restoreKeyboardFocusAsync() {
     juce::Component::SafePointer<GridComponent> safeThis(this);
-    juce::MessageManager::callAsync([safeThis] {
-        if (safeThis != nullptr)
-            safeThis->grabKeyboardFocus();
+    juce::Timer::callAfterDelay(100, [safeThis] {
+        if (safeThis == nullptr)
+            return;
+
+        if (auto* peer = safeThis->getPeer())
+            peer->grabFocus();
+        safeThis->grabKeyboardFocus();
     });
 }
 
