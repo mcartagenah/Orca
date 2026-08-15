@@ -21,12 +21,12 @@ void Grid::reset(int newW, int newH) {
     memset(variables, '.', sizeof(variables));
 }
 
-void Grid::load(int newW, int newH, const char* s, int frame) {
+void Grid::load(int newW, int newH, const char* s, int sourceLength, int frame) {
     w = newW;
     h = newH;
     f = frame;
     int size = w * h;
-    int srcLen = s ? (int)strlen(s) : 0;
+    int srcLen = s ? clamp(sourceLength, 0, size) : 0;
 
     for (int i = 0; i < size; i++) {
         if (i < srcLen) {

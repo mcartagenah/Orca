@@ -47,6 +47,23 @@ public:
     bool stampMode = false;
     int stampIndex = 0;    // index into builtInPatterns
     int stampCategory = 0; // current category index
+    int stampRotation = 0; // 0=0°, 1=90°CW, 2=180°, 3=270°CW
+
+    // Stamp rotation helpers
+    void stampDims(const orca::LifePattern& p, int& outW, int& outH) const {
+        outW = (stampRotation & 1) ? p.h : p.w;
+        outH = (stampRotation & 1) ? p.w : p.h;
+    }
+    char stampCell(const orca::LifePattern& p, int nx, int ny) const {
+        int sx, sy;
+        switch (stampRotation) {
+            case 1: sx = ny; sy = p.h - 1 - nx; break;
+            case 2: sx = p.w - 1 - nx; sy = p.h - 1 - ny; break;
+            case 3: sx = p.w - 1 - ny; sy = nx; break;
+            default: sx = nx; sy = ny; break;
+        }
+        return p.data[sx + p.w * sy];
+    }
 
     // Cursor
     int cursorX = 0, cursorY = 0;
@@ -88,6 +105,49 @@ public:
 
 private:
     OrcaProcessor& processor;
+
+    struct LifeRenderState {
+        orca::LifeGrid::SeqMode seqMode = orca::LifeGrid::SeqOff;
+        orca::LifeGrid::ScaleType currentScale = orca::LifeGrid::Chromatic;
+        orca::LifeGrid::LoopState loopState = orca::LifeGrid::LoopOff;
+        int evolveRate = 1, frameCounter = 0, wrapW = 1, wrapH = 1;
+        int euclidPulses = 3;
+        int rootNote = 0, populationCount = 0;
+        int minOctave = 0, maxOctave = 7;
+        int minProb = 10, maxNotes = 0, dedupCC = -1;
+        int microtuneAmount = 50, loopHead = 0, loopLength = 0, loopRecorded = 0;
+        int chordDegreeCount = 0;
+        int chordDegrees[7] = {};
+        int randomPhase[512] = {};
+        bool euclidPattern[512] = {};
+        bool mirrorForward = true, pulseMode = true, conductorMode = false;
+        bool seqHorizontal = false;
+        bool decay = false, dedup = false, lockOctave = false, microtuning = false;
+        uint8_t minVelocity = 40;
+        char ruleString[16] = "23/3";
+
+        int phaseFor(int position, int total) const;
+        int phaseForRow(int y) const { return phaseFor(y, wrapH); }
+        int phaseForCol(int x) const { return phaseFor(x, wrapW); }
+        int population() const { return populationCount; }
+        juce::String chordDegreesString() const;
+    };
+
+    struct RenderState {
+        char shadowCells[orca::kMaxGridSize] = {};
+        uint8_t shadowPorts[orca::kMaxGridSize] = {};
+        char shadowPortOwner[orca::kMaxGridSize] = {};
+        uint8_t shadowPortIdx[orca::kMaxGridSize] = {};
+        bool shadowLocks[orca::kMaxGridSize] = {};
+        orca::LifeCell shadowLife[orca::kMaxGridSize];
+        int shadowW = 0, shadowH = 0, shadowF = 0;
+        bool lifeMode = false;
+        uint8_t paintChannel = 0, paintOctave = 3;
+        LifeRenderState lifeGrid;
+    };
+
+    RenderState renderState;
+    void captureRenderState();
 
     float fontSize = 12.0f;
     float tileW = 10.0f;

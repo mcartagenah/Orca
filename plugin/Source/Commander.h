@@ -198,6 +198,8 @@ private:
             else if (sh == "cn") result.name = "conductor";
             else if (sh == "mt") result.name = "microtune";
             else if (sh == "lp") result.name = "loop";
+            else if (sh == "eu") result.name = "euclid";
+            else if (sh == "or") result.name = "orient";
         }
         return result;
     }

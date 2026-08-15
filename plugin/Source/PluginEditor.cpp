@@ -34,38 +34,143 @@ GridComponent::~GridComponent() {
     delete[] lifeHistory;
 }
 
+int GridComponent::LifeRenderState::phaseFor(int position, int total) const {
+    if (seqMode == orca::LifeGrid::SeqOff || evolveRate <= 1 || total <= 0) return 0;
+    int forwardPhase = position * evolveRate / total;
+    switch (seqMode) {
+        case orca::LifeGrid::SeqForward: return forwardPhase;
+        case orca::LifeGrid::SeqReverse: return (evolveRate - 1) - forwardPhase;
+        case orca::LifeGrid::SeqMirror:
+            return mirrorForward ? forwardPhase : (evolveRate - 1) - forwardPhase;
+        case orca::LifeGrid::SeqRandom: return randomPhase[forwardPhase % evolveRate];
+        case orca::LifeGrid::SeqEuclid:
+            return euclidPattern[forwardPhase % evolveRate] ? forwardPhase : -1;
+        default: return 0;
+    }
+}
+
+juce::String GridComponent::LifeRenderState::chordDegreesString() const {
+    juce::String result;
+    for (int i = 0; i < chordDegreeCount; i++)
+        result += juce::String(chordDegrees[i] + 1);
+    return result;
+}
+
+void GridComponent::captureRenderState() {
+    const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+    const auto& engine = processor.engine;
+    const auto& life = engine.lifeGrid;
+    int size = engine.shadowW * engine.shadowH;
+
+    memcpy(renderState.shadowCells, engine.shadowCells, size);
+    memcpy(renderState.shadowPorts, engine.shadowPorts, size);
+    memcpy(renderState.shadowPortOwner, engine.shadowPortOwner, size);
+    memcpy(renderState.shadowPortIdx, engine.shadowPortIdx, size);
+    memcpy(renderState.shadowLocks, engine.shadowLocks, size * sizeof(bool));
+    memcpy(renderState.shadowLife, engine.shadowLife, size * sizeof(orca::LifeCell));
+    renderState.shadowW = engine.shadowW;
+    renderState.shadowH = engine.shadowH;
+    renderState.shadowF = engine.shadowF;
+    renderState.lifeMode = engine.lifeMode;
+    renderState.paintChannel = engine.paintChannel;
+    renderState.paintOctave = engine.paintOctave;
+
+    auto& snapshot = renderState.lifeGrid;
+    snapshot.seqMode = life.seqMode;
+    snapshot.currentScale = life.currentScale;
+    snapshot.loopState = life.loopState;
+    snapshot.evolveRate = life.evolveRate;
+    snapshot.frameCounter = life.frameCounter;
+    snapshot.wrapW = life.wrapW;
+    snapshot.wrapH = life.wrapH;
+    snapshot.euclidPulses = life.euclidPulses;
+    snapshot.rootNote = life.rootNote;
+    snapshot.populationCount = life.population();
+    snapshot.minOctave = life.minOctave;
+    snapshot.maxOctave = life.maxOctave;
+    snapshot.minVelocity = life.minVelocity;
+    snapshot.minProb = life.minProb;
+    snapshot.maxNotes = life.maxNotes;
+    snapshot.dedupCC = life.dedupCC;
+    snapshot.microtuneAmount = life.microtuneAmount;
+    snapshot.loopHead = life.loopHead;
+    snapshot.loopLength = life.loopLength;
+    snapshot.loopRecorded = life.loopRecorded;
+    snapshot.chordDegreeCount = life.chordDegreeCount;
+    memcpy(snapshot.chordDegrees, life.chordDegrees, sizeof(snapshot.chordDegrees));
+    memcpy(snapshot.randomPhase, life.randomPhase, sizeof(snapshot.randomPhase));
+    memcpy(snapshot.euclidPattern, life.euclidPattern, sizeof(snapshot.euclidPattern));
+    snapshot.mirrorForward = life.mirrorForward;
+    snapshot.pulseMode = life.pulseMode;
+    snapshot.conductorMode = life.conductorMode;
+    snapshot.seqHorizontal = life.seqHorizontal;
+    snapshot.decay = life.decay;
+    snapshot.dedup = life.dedup;
+    snapshot.lockOctave = life.lockOctave;
+    snapshot.microtuning = life.microtuning;
+    memcpy(snapshot.ruleString, life.ruleString, sizeof(snapshot.ruleString));
+}
+
 void GridComponent::paint(juce::Graphics& g) {
     g.fillAll(bgColor);
 
-    auto& engine = processor.engine;
+    captureRenderState();
+    auto& engine = renderState;
     int gridW = engine.shadowW;
     int gridH = engine.shadowH;
 
     g.setFont(monoFont);
 
-    // Phase offset: row group guides + active phase highlight
+    // Phase offset: row/column group guides + active phase highlight
     if (engine.lifeMode && engine.lifeGrid.seqMode != orca::LifeGrid::SeqOff && engine.lifeGrid.evolveRate > 1) {
         int currentFrame = engine.lifeGrid.frameCounter;
         float totalW = gridW * tileW;
+        float totalH = gridH * tileH;
+        bool horiz = engine.lifeGrid.seqHorizontal;
 
-        // Draw separator lines between phase groups
-        int prevPhase = -1;
-        for (int y = 0; y < gridH; y++) {
-            int ph = engine.lifeGrid.phaseForRow(y);
-            if (ph != prevPhase && prevPhase >= 0) {
-                float ly = y * tileH;
-                g.setColour(juce::Colour(0x30ffffff));
-                g.fillRect(0.0f, ly, totalW, 1.0f);
+        if (horiz) {
+            // Horizontal: vertical separator lines between column groups
+            int prevGroup = -1;
+            for (int x = 0; x < gridW; x++) {
+                int group = (engine.lifeGrid.wrapW > 0)
+                            ? x * engine.lifeGrid.evolveRate / engine.lifeGrid.wrapW : 0;
+                if (group != prevGroup && prevGroup >= 0) {
+                    float lx = x * tileW;
+                    g.setColour(juce::Colour(0x30ffffff));
+                    g.fillRect(lx, 0.0f, 1.0f, totalH);
+                }
+                prevGroup = group;
             }
-            prevPhase = ph;
-        }
-
-        // Highlight the active phase rows
-        for (int y = 0; y < gridH; y++) {
-            if (engine.lifeGrid.phaseForRow(y) == currentFrame) {
-                float py = y * tileH;
-                g.setColour(juce::Colour(0x15ffffff));
-                g.fillRect(0.0f, py, totalW, tileH);
+            // Highlight active phase columns
+            for (int x = 0; x < gridW; x++) {
+                int ph = engine.lifeGrid.phaseForCol(x);
+                if (ph >= 0 && ph == currentFrame) {
+                    float px = x * tileW;
+                    g.setColour(juce::Colour(0x15ffffff));
+                    g.fillRect(px, 0.0f, tileW, totalH);
+                }
+            }
+        } else {
+            // Vertical (default): horizontal separator lines between row groups
+            int prevGroup = -1;
+            for (int y = 0; y < gridH; y++) {
+                int group = (engine.lifeGrid.wrapH > 0)
+                            ? y * engine.lifeGrid.evolveRate / engine.lifeGrid.wrapH : 0;
+                if (group != prevGroup && prevGroup >= 0) {
+                    float ly = y * tileH;
+                    g.setColour(juce::Colour(0x30ffffff));
+                    g.fillRect(0.0f, ly, totalW, 1.0f);
+                }
+                prevGroup = group;
+            }
+            // Highlight active phase rows
+            for (int y = 0; y < gridH; y++) {
+                int ph = engine.lifeGrid.phaseForRow(y);
+                if (ph >= 0 && ph == currentFrame) {
+                    float py = y * tileH;
+                    g.setColour(juce::Colour(0x15ffffff));
+                    g.fillRect(0.0f, py, totalW, tileH);
+                }
             }
         }
     }
@@ -90,11 +195,11 @@ void GridComponent::paint(juce::Graphics& g) {
     // Draw stamp mode ghost overlay
     if (stampMode && engine.lifeMode) {
         auto& p = orca::builtInPatterns[stampIndex];
+        int sw, sh; stampDims(p, sw, sh);
         auto channelCol = juce::Colour(channelColorValues[engine.paintChannel % 16]);
-        for (int py = 0; py < p.h; py++) {
-            for (int px = 0; px < p.w; px++) {
-                int srcIdx = px + p.w * py;
-                if (p.data[srcIdx] != 'X') continue;
+        for (int py = 0; py < sh; py++) {
+            for (int px = 0; px < sw; px++) {
+                if (stampCell(p, px, py) != 'X') continue;
                 int gx = cursorX + px, gy = cursorY + py;
                 if (gx >= gridW || gy >= gridH) continue;
                 float cellX = gx * tileW;
@@ -183,10 +288,15 @@ void GridComponent::paint(juce::Graphics& g) {
                   << " " << orca::LifeGrid::scaleName(engine.lifeGrid.currentScale)
                   << "  " << (engine.lifeGrid.pulseMode ? "pulse" : "hold")
                   << "  rate:" << engine.lifeGrid.evolveRate;
-            line1 << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqReverse ? "  seq:rev" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqMirror ? "  seq:mirror" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "");
+            if (engine.lifeGrid.seqMode == orca::LifeGrid::SeqEuclid)
+                line1 << "  seq:euclid:" << engine.lifeGrid.euclidPulses;
+            else
+                line1 << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqReverse ? "  seq:rev" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqMirror ? "  seq:mirror" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "");
+            if (engine.lifeGrid.seqMode != orca::LifeGrid::SeqOff && engine.lifeGrid.seqHorizontal)
+                line1 << " h";
             if (engine.lifeGrid.conductorMode) line1 << "  cond";
             if (engine.lifeGrid.chordDegreeCount > 0)
                 line1 << "  chd:" << engine.lifeGrid.chordDegreesString();
@@ -202,6 +312,9 @@ void GridComponent::paint(juce::Graphics& g) {
             if (stampMode) {
                 line2 << "STAMP: " << stampCategories[stampCategory].name
                       << " > " << orca::builtInPatterns[stampIndex].name;
+                if (stampRotation == 1) line2 << " 90";
+                else if (stampRotation == 2) line2 << " 180";
+                else if (stampRotation == 3) line2 << " 270";
             } else {
                 line2 << gridW << "x" << gridH
                       << "  udp:" << processor.udpOutputPort
@@ -402,8 +515,8 @@ void GridComponent::drawLifeCell(juce::Graphics& g, int x, int y,
     // Alive cell: color by channel hue, brightness by octave
     juce::Colour baseCol(channelColorValues[cell.channel % 16]);
     // minOctave = 30% brightness, maxOctave = 100%
-    float range = juce::jmax(1.0f, (float)(processor.engine.lifeGrid.maxOctave - processor.engine.lifeGrid.minOctave));
-    float brightness = 0.3f + ((cell.octave - processor.engine.lifeGrid.minOctave) / range) * 0.7f;
+    float range = juce::jmax(1.0f, (float)(renderState.lifeGrid.maxOctave - renderState.lifeGrid.minOctave));
+    float brightness = 0.3f + ((cell.octave - renderState.lifeGrid.minOctave) / range) * 0.7f;
     juce::Colour col = baseCol.withMultipliedBrightness(brightness);
 
     g.setColour(col);
@@ -454,7 +567,7 @@ void GridComponent::resized() {
                 newCells[x + newW * y] = buf[x + grid.w * y];
             }
         }
-        processor.engine.load(newW, newH, newCells, grid.f);
+        processor.engine.load(newW, newH, newCells, newW * newH, grid.f);
     }
 
     // Update Life grid wrap boundary to match visible area
@@ -822,6 +935,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && code == 'P') {
         auto& engine = processor.engine;
         if (engine.lifeMode) {
+            stampRotation = 0;
             if (!stampMode) {
                 stampMode = true;
                 stampCategory = 0;
@@ -839,8 +953,17 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
         }
     }
 
+    // Stamp mode: Cmd+R / Cmd+Shift+R = rotate stamp
+    if (stampMode && cmd && code == 'R') {
+        stampRotation = shift
+            ? (stampRotation + 3) % 4   // CCW
+            : (stampRotation + 1) % 4;  // CW
+        return true;
+    }
+
     // Stamp mode: Cmd+] / Cmd+[ = cycle category
     if (stampMode && cmd && (code == ']' || code == '[')) {
+        stampRotation = 0;
         if (code == ']')
             stampCategory = (stampCategory + 1) % numStampCategories;
         else
@@ -859,14 +982,14 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Stamp mode: Enter = place pattern
     if (stampMode && code == juce::KeyPress::returnKey) {
         auto& p = orca::builtInPatterns[stampIndex];
+        int sw, sh; stampDims(p, sw, sh);
         const juce::SpinLock::ScopedLockType lock(processor.engineLock);
         auto& lg = processor.engine.lifeGrid;
         pushLifeHistory();
 
-        for (int py = 0; py < p.h; py++) {
-            for (int px = 0; px < p.w; px++) {
-                int srcIdx = px + p.w * py;
-                char c = p.data[srcIdx];
+        for (int py = 0; py < sh; py++) {
+            for (int px = 0; px < sw; px++) {
+                char c = stampCell(p, px, py);
                 int destIdx = lg.indexAt(cursorX + px, cursorY + py);
                 if (destIdx < 0) continue;
 
@@ -891,6 +1014,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Stamp mode: Escape = cancel
     if (stampMode && code == juce::KeyPress::escapeKey) {
         stampMode = false;
+        stampRotation = 0;
         return true;
     }
 
@@ -909,8 +1033,8 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && processor.engine.lifeMode && (selectW > 1 || selectH > 1)) {
         auto& lg = processor.engine.lifeGrid;
 
-        // Cmd+E: rotate selection 90° clockwise
-        if (code == 'E') {
+        // Cmd+Shift+E: rotate selection 90° clockwise
+        if (shift && code == 'E') {
             pushLifeHistory();
             orca::LifeCell temp[orca::kMaxGridSize];
             for (int dy = 0; dy < selectH; dy++)
@@ -1016,7 +1140,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && !shift && code == 'L') {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Import modules", currentFile.existsAsFile() ? currentFile.getParentDirectory() : juce::File(),
-            "*.orca;*.life");
+            "*.orca;*.life", false, false, this);
         fileChooser->launchAsync(
             juce::FileBrowserComponent::openMode
             | juce::FileBrowserComponent::canSelectFiles
@@ -1037,7 +1161,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Cmd+O: open .orca or .life file
     if (cmd && code == 'O') {
         fileChooser = std::make_unique<juce::FileChooser>(
-            "Open file", juce::File(), "*.orca;*.life");
+            "Open file", juce::File(), "*.orca;*.life", false, false, this);
         fileChooser->launchAsync(juce::FileBrowserComponent::openMode
                                  | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
@@ -1308,20 +1432,37 @@ void GridComponent::pushHistory() {
 
 void GridComponent::undo() {
     if (historyPos < 0 || historyCount == 0) return;
-    auto& snap = history[historyPos];
-    {
-        const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-        processor.engine.load(snap.w, snap.h, snap.cells, processor.engine.grid.f);
+    const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+
+    // The history stores pre-edit states. Preserve the current post-edit state
+    // the first time we move backward so redo has a destination to restore.
+    if (historyPos == historyCount - 1) {
+        if (historyCount >= kMaxHistory) {
+            for (int i = 0; i < kMaxHistory - 1; i++)
+                history[i] = history[i + 1];
+            historyCount = kMaxHistory - 1;
+            historyPos--;
+        }
+        auto& current = history[historyCount++];
+        auto& grid = processor.engine.grid;
+        memcpy(current.cells, grid.cells, grid.w * grid.h);
+        current.w = grid.w;
+        current.h = grid.h;
     }
+
+    auto& snap = history[historyPos];
+    processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
+                          processor.engine.grid.f);
     historyPos--;
 }
 
 void GridComponent::redo() {
-    if (historyPos + 1 >= historyCount) return;
+    if (historyPos + 2 >= historyCount) return;
     historyPos++;
-    auto& snap = history[historyPos];
+    auto& snap = history[historyPos + 1];
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-    processor.engine.load(snap.w, snap.h, snap.cells, processor.engine.grid.f);
+    processor.engine.load(snap.w, snap.h, snap.cells, snap.w * snap.h,
+                          processor.engine.grid.f);
 }
 
 void GridComponent::pushLifeHistory() {
@@ -1348,19 +1489,37 @@ void GridComponent::pushLifeHistory() {
 
 void GridComponent::undoLife() {
     if (!lifeHistory || lifeHistoryPos < 0 || lifeHistoryCount == 0) return;
-    auto& snap = lifeHistory[lifeHistoryPos];
-    lifeHistoryPos--;
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
     auto& lg = processor.engine.lifeGrid;
+
+    if (lifeHistoryPos == lifeHistoryCount - 1) {
+        if (lifeHistoryCount >= kMaxLifeHistory) {
+            for (int i = 0; i < kMaxLifeHistory - 1; i++)
+                lifeHistory[i] = lifeHistory[i + 1];
+            lifeHistoryCount = kMaxLifeHistory - 1;
+            lifeHistoryPos--;
+        }
+        auto& current = lifeHistory[lifeHistoryCount++];
+        memcpy(current.cells, lg.cells, sizeof(orca::LifeCell) * lg.w * lg.h);
+        current.w = lg.w;
+        current.h = lg.h;
+    }
+
+    auto& snap = lifeHistory[lifeHistoryPos];
+    if (lg.w != snap.w || lg.h != snap.h)
+        lg.resize(snap.w, snap.h);
     memcpy(lg.cells, snap.cells, sizeof(orca::LifeCell) * snap.w * snap.h);
+    lifeHistoryPos--;
 }
 
 void GridComponent::redoLife() {
-    if (!lifeHistory || lifeHistoryPos + 1 >= lifeHistoryCount) return;
+    if (!lifeHistory || lifeHistoryPos + 2 >= lifeHistoryCount) return;
     lifeHistoryPos++;
-    auto& snap = lifeHistory[lifeHistoryPos];
+    auto& snap = lifeHistory[lifeHistoryPos + 1];
     const juce::SpinLock::ScopedLockType lock(processor.engineLock);
     auto& lg = processor.engine.lifeGrid;
+    if (lg.w != snap.w || lg.h != snap.h)
+        lg.resize(snap.w, snap.h);
     memcpy(lg.cells, snap.cells, sizeof(orca::LifeCell) * snap.w * snap.h);
 }
 
@@ -1421,7 +1580,7 @@ void GridComponent::loadOrcaFile(const juce::File& file) {
 
     {
         const juce::SpinLock::ScopedLockType lock(processor.engineLock);
-        processor.engine.load(w, h, buf, 0);
+        processor.engine.load(w, h, buf, w * h, 0);
     }
     currentFile = file;
 
@@ -1448,7 +1607,8 @@ void GridComponent::saveAs() {
     auto ext = isLife ? "*.life" : "*.orca";
     auto title = isLife ? "Save .life file" : "Save .orca file";
     fileChooser = std::make_unique<juce::FileChooser>(
-        title, currentFile.existsAsFile() ? currentFile : juce::File(), ext);
+        title, currentFile.existsAsFile() ? currentFile : juce::File(), ext,
+        false, false, this);
     fileChooser->launchAsync(juce::FileBrowserComponent::saveMode
                              | juce::FileBrowserComponent::canSelectFiles,
         [this, isLife](const juce::FileChooser& fc) {
@@ -1479,6 +1639,8 @@ void GridComponent::saveLifeFile(const juce::File& file) {
             << " minprob:" << lg.minProb
             << " maxnotes:" << lg.maxNotes
             << " seq:" << static_cast<int>(lg.seqMode)
+            << " euclid:" << lg.euclidPulses
+            << " orient:" << (lg.seqHorizontal ? "h" : "v")
             << " lockoct:" << (lg.lockOctave ? 1 : 0)
             << " chord:" << lg.chordDegreesString()
             << " dedup:" << (lg.dedup ? 1 : 0)
@@ -1528,7 +1690,7 @@ void GridComponent::loadLifeFile(const juce::File& file) {
     h = juce::jlimit(1, orca::kMaxGridH, h);
 
     // Parse optional settings from header
-    int scale = 0, root = 0, rate = 4, pulse = 0, decayVal = 0, minvel = 40, minprob = 10, maxnotes = 0, seqVal = 0, lockoct = 0, dedupVal = 0, dedupcc = -1, minoct = 0, maxoct = 7;
+    int scale = 0, root = 0, rate = 4, pulse = 0, decayVal = 0, minvel = 40, minprob = 10, maxnotes = 0, seqVal = 0, euclid = 3, seqHoriz = 0, lockoct = 0, dedupVal = 0, dedupcc = -1, minoct = 0, maxoct = 7;
     juce::String chordStr = "off";
     juce::String ruleStr = "23/3";
     for (int i = 3; i < tokens.size(); i++) {
@@ -1541,6 +1703,8 @@ void GridComponent::loadLifeFile(const juce::File& file) {
         else if (tokens[i].startsWith("minprob:")) minprob = tokens[i].substring(8).getIntValue();
         else if (tokens[i].startsWith("maxnotes:")) maxnotes = tokens[i].substring(9).getIntValue();
         else if (tokens[i].startsWith("seq:")) seqVal = tokens[i].substring(4).getIntValue();
+        else if (tokens[i].startsWith("euclid:")) euclid = tokens[i].substring(7).getIntValue();
+        else if (tokens[i].startsWith("orient:")) seqHoriz = tokens[i].substring(7).equalsIgnoreCase("h") ? 1 : 0;
         else if (tokens[i].startsWith("lockoct:")) lockoct = tokens[i].substring(8).getIntValue();
         else if (tokens[i].startsWith("chord:")) chordStr = tokens[i].substring(6);
         else if (tokens[i].startsWith("dedup:")) dedupVal = tokens[i].substring(6).getIntValue();
@@ -1574,7 +1738,10 @@ void GridComponent::loadLifeFile(const juce::File& file) {
     processor.lifeMaxNotesParam->setValueNotifyingHost(
         processor.lifeMaxNotesParam->convertTo0to1(juce::jmax(0, maxnotes)));
     processor.lifeSeqParam->setValueNotifyingHost(
-        processor.lifeSeqParam->convertTo0to1(juce::jlimit(0, 4, seqVal)));
+        processor.lifeSeqParam->convertTo0to1(juce::jlimit(0, 5, seqVal)));
+    processor.lifeEuclidParam->setValueNotifyingHost(
+        processor.lifeEuclidParam->convertTo0to1(juce::jlimit(1, 32, euclid)));
+    processor.lifeSeqHorizParam->setValueNotifyingHost(seqHoriz != 0 ? 1.0f : 0.0f);
     processor.lifeLockOctParam->setValueNotifyingHost(lockoct != 0 ? 1.0f : 0.0f);
     {
         int chordIdx = processor.findChordPresetIndex(chordStr);
@@ -2084,9 +2251,35 @@ bool Commander::trigger(OrcaProcessor& processor, GridComponent& editor) {
         else if (val == "reverse" || val == "rev") idx = 2;
         else if (val == "mirror" || val == "mir") idx = 3;
         else if (val == "random" || val == "rand" || val == "rnd") idx = 4;
+        else if (val.startsWith("euclid") || val.startsWith("euc")) {
+            idx = 5;
+            // Parse optional pulse count: seq:euclid:N or seq:euc:N
+            auto colonIdx = val.indexOfChar(':');
+            if (colonIdx >= 0) {
+                int pulses = val.substring(colonIdx + 1).getIntValue();
+                if (pulses >= 1 && pulses <= 32)
+                    processor.lifeEuclidParam->setValueNotifyingHost(
+                        processor.lifeEuclidParam->convertTo0to1(pulses));
+            }
+        }
         else idx = (processor.lifeSeqParam->getIndex() == 0) ? 1 : 0; // toggle
         processor.lifeSeqParam->setValueNotifyingHost(
             processor.lifeSeqParam->convertTo0to1(idx));
+    }
+    else if (isLife && (cmd.name == "euclid" || cmd.name == "euc")) {
+        int pulses = cmd.value.getIntValue();
+        if (pulses >= 1 && pulses <= 32)
+            processor.lifeEuclidParam->setValueNotifyingHost(
+                processor.lifeEuclidParam->convertTo0to1(pulses));
+    }
+    else if (isLife && (cmd.name == "orient" || cmd.name == "orientation")) {
+        auto val = cmd.value.toLowerCase().trim();
+        bool horiz = (val == "h" || val == "horizontal" || val == "lr" || val == "left")
+                   ? true
+                   : (val == "v" || val == "vertical" || val == "tb" || val == "top")
+                   ? false
+                   : !processor.lifeSeqHorizParam->get(); // toggle
+        processor.lifeSeqHorizParam->setValueNotifyingHost(horiz ? 1.0f : 0.0f);
     }
     else if (isLife && cmd.name == "rule") {
         auto val = cmd.value.toLowerCase().trim();

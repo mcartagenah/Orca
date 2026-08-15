@@ -1,57 +1,116 @@
 # ORCΛ
 
-<img src="https://raw.githubusercontent.com/hundredrabbits/100r.co/master/media/content/characters/orca.hello.png" width="300"/>
+<img src="https://raw.githubusercontent.com/hundredrabbits/100r.co/master/media/content/characters/orca.hello.png" width="300" alt="Orca character" />
 
-Orca is an [esoteric programming language](https://en.wikipedia.org/wiki/Esoteric_programming_language) designed to quickly create procedural sequencers, in which every letter of the alphabet is an operation, where lowercase letters operate on bang, uppercase letters operate each frame.
+Orca is an [esoteric programming language](https://en.wikipedia.org/wiki/Esoteric_programming_language) for quickly building procedural sequencers. Each letter is an operation: uppercase operators run every frame, while lowercase operators run only when they receive a bang (`*`).
 
-This application **is not a synthesizer, but a livecoding environment** capable of sending MIDI, OSC & UDP to your audio/visual interfaces, like Ableton, Renoise, VCV Rack or SuperCollider.
+Orca is **not a synthesizer**. It is a live-coding environment that sends MIDI, OSC, and UDP to instruments and audiovisual software such as Ableton Live, Renoise, VCV Rack, and SuperCollider.
 
-If you need **help**, visit the [chatroom](https://discord.gg/F7W98pXKd7), the [mailing list](https://lists.sr.ht/~rabbits/orca), join the [forum](https://llllllll.co/t/orca-live-coding-tool/17689) or watch a [tutorial](https://www.youtube.com/watch?v=ktcWOLeWP-g).
+This repository is a fork of the original project by [Hundred Rabbits](https://100r.co/). It retains the browser and Electron versions and adds a native macOS AU/VST3/Standalone plugin, a musical Game of Life mode, new operators, groove, and other workflow improvements.
 
-Orca was created by [Hundred Rabbits](https://100r.co/) — this fork adds a native AU/VST3 plugin with Life mode, new operators, and other enhancements. If you enjoy these additions, you can support my work:
+## Contents
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X7X31XSQK3)
+- [Choose a version](#choose-a-version)
+- [Build and run](#build-and-run)
+- [Plugin usage](#plugin-usage)
+- [Operators](#operators)
+- [MIDI, UDP, and OSC](#midi-udp-and-osc)
+- [Desktop Commander and project mode](#desktop-commander-and-project-mode)
+- [Groove](#groove)
+- [Plugin Commander](#plugin-commander)
+- [Life mode](#life-mode)
+- [Reference tables](#reference-tables)
 
-- [Download builds](https://hundredrabbits.itch.io/orca), available for **Linux, Windows and OSX**.
-- Use [in your browser](https://hundredrabbits.github.io/Orca/), requires **webMidi**.
+## Choose a version
+
+| Version | Best for | Notes |
+|---------|----------|-------|
+| Browser/PWA | Trying classic Orca without installing it | Uses Web MIDI; browser builds do not provide UDP or OSC |
+| Electron desktop | The original standalone Orca workflow | Cross-platform; supports MIDI, UDP, and OSC |
+| JUCE plugin | Running Orca inside a DAW or as a native standalone app | This fork's macOS AU/VST3/Standalone build; includes Life mode and DAW automation |
+
+Upstream builds and ports remain available:
+
+- [Download upstream desktop builds](https://hundredrabbits.itch.io/orca) for Linux, Windows, and macOS.
+- Use [the upstream browser version](https://hundredrabbits.github.io/Orca/) with Web MIDI.
 - Use [in a terminal](https://git.sr.ht/~rabbits/orca), written in C.
 - Use [on small computers](https://git.sr.ht/~rabbits/orca-toy), written in assembly.
 - Use [on the Monome Norns](https://llllllll.co/t/orca/22492), written in Lua.
 
-## Install & Run
+For help with the Orca language, visit the [chatroom](https://discord.gg/F7W98pXKd7), [mailing list](https://lists.sr.ht/~rabbits/orca), [forum](https://llllllll.co/t/orca-live-coding-tool/17689), or [introductory tutorial](https://www.youtube.com/watch?v=ktcWOLeWP-g).
+
+If you enjoy this fork's additions, you can support the maintainer:
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X7X31XSQK3)
+
+## Build and run
+
+Clone the fork once, including the JUCE submodule used by the plugin:
+
+```sh
+git clone --recurse-submodules https://github.com/mcartagenah/Orca.git
+cd Orca
+```
+
+If the repository was cloned without submodules, initialize JUCE with:
+
+```sh
+git submodule update --init --recursive
+```
+
+### Browser/PWA
+
+The root `index.html` loads the same JavaScript sources as the Electron app. Serve the repository root rather than opening the file directly:
+
+```sh
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000`. Allow MIDI access when prompted. UDP and OSC are unavailable in the browser build.
 
 ### Desktop (Electron)
 
-If you wish to use Orca inside of [Electron](https://electronjs.org/), follow these steps:
+The desktop app uses Node 16 (`desktop/.nvmrc`):
 
-```
-git clone https://github.com/mcartagenah/Orca.git
-cd Orca/desktop/
-npm install
+```sh
+cd desktop
+npm ci
 npm start
 ```
 
-### Plugin (AU/VST3)
+### Plugin (AU/VST3/Standalone)
 
-Orca is also available as an **AU/VST3 plugin** for use inside DAWs like Ableton Live, Logic Pro, etc. The plugin uses a native C++ engine and creates a virtual MIDI port named "Orca".
+The plugin requires macOS, CMake 3.22 or newer, Xcode Command Line Tools, and the JUCE submodule. A non-installing Release build is:
 
+```sh
+cmake -S plugin -B plugin/build -DCMAKE_BUILD_TYPE=Release
+cmake --build plugin/build --config Release --target OrcaPlugin_All -j8
 ```
-git clone https://github.com/mcartagenah/Orca.git
-cd Orca/plugin/
-make all
+
+Artifacts are written beneath `plugin/build/OrcaPlugin_artefacts/Release/`.
+
+To build and install the AU and VST3 into the current user's plugin folders:
+
+```sh
+make -C plugin configure
+make -C plugin all
 ```
 
-This builds and installs both the AU (`~/Library/Audio/Plug-Ins/Components/`) and VST3 (`~/Library/Audio/Plug-Ins/VST3/`) versions. macOS only.
+`make all` replaces existing Orca bundles in `~/Library/Audio/Plug-Ins/Components/` and `~/Library/Audio/Plug-Ins/VST3/`. Build with CMake first if you do not want to modify installed plugins. The standalone app can be run from `plugin/build/OrcaPlugin_artefacts/Release/Standalone/Orca.app`.
 
-#### Plugin Keyboard Shortcuts
+## Plugin usage
+
+The plugin is a silent Music Device: it generates MIDI but does not synthesize audio. Load it before an instrument in a MIDI-capable track, or route the system-wide virtual MIDI source named `Orca` to another application.
+
+### General keyboard shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+O` | Open .orca file |
-| `Cmd+S` | Save as .orca/.life file |
-| `Cmd+L` | Import modules (load .orca/.life files into inject cache) |
-| `Cmd+G` | Toggle Life (Game of Life) mode |
-| `Cmd+K` | Open command prompt |
+| `Cmd+O` | Open an `.orca` or `.life` file |
+| `Cmd+S` | Save as `.orca` or `.life`, according to the current mode |
+| `Cmd+L` | Import `.orca`/`.life` modules into the injection cache |
+| `Cmd+G` | Toggle Life mode |
+| `Cmd+K` | Open the Plugin Commander |
 | `Cmd+F` | Open command prompt with `find:` |
 | `Cmd+=` | Zoom in |
 | `Cmd+-` | Zoom out |
@@ -61,17 +120,23 @@ This builds and installs both the AU (`~/Library/Audio/Plug-Ins/Components/`) an
 | `Shift+Arrows` | Expand selection |
 | `Cmd+C/V/X` | Copy/Paste/Cut |
 | `Backspace` | Delete selected cells |
+| `Space` (Standalone only) | Toggle the internal transport |
 
-#### Plugin Parameters (DAW-Automatable)
+Life mode adds [mode-specific shortcuts](#life-mode-keyboard-shortcuts).
 
-All parameters are exposed via APVTS and can be automated from the DAW:
+### DAW-automatable parameters
+
+The following parameters are exposed to the host:
 
 | Group | Parameter | Range | Default | Description |
 |-------|-----------|-------|---------|-------------|
-| Shuffle | Shuffle | 0-200% | 100% | Swing amount (0%=inverse, 100%=straight, 200%=max) |
+| Shuffle | Shuffle | 0-200% | 100% | Swing amount: 0% inverse, 100% straight, 200% maximum swing |
 | Life: Timing | Evolve Rate | 1-32 | 4 | Frames between evolutions |
-| Life: Timing | Seq Mode | Off/Forward/Reverse/Mirror/Random | Off | Sequencer mode variant |
+| Life: Timing | Seq Mode | Off/Forward/Reverse/Mirror/Random/Euclid | Off | Sequencer scan mode |
+| Life: Timing | Euclid Pulses | 1-32 | 3 | Active phases in Euclid sequencer mode |
+| Life: Timing | Seq Horizontal | On/Off | Off | Scan columns left-to-right instead of rows top-to-bottom |
 | Life: Timing | Pulse Mode | On/Off | On | Pulse (retrigger) vs Hold (sustain) |
+| Life: Timing | Conductor Mode | On/Off | Off | Evolve only on Enter or incoming MIDI Note On |
 | Life: Pitch | Scale | 15 types | Chromatic | Active musical scale |
 | Life: Pitch | Root Note | C-B | C | Scale root note |
 | Life: Pitch | Min Octave | 0-8 | 0 | Lower octave limit |
@@ -85,23 +150,23 @@ All parameters are exposed via APVTS and can be automated from the DAW:
 | Life: Processing | Dedup | On/Off | Off | Merge identical {channel, pitch} notes |
 | Life: Processing | Dedup CC | -1 to 127 | -1 | CC for dedup count modulation (-1=off) |
 | Life: Processing | CA Rule | Presets | Life | Cellular automata rule set |
-| Life: Timing | Conductor | On/Off | Off | Manual evolution via trigger (Enter/MIDI) |
 | Life: Pitch | Microtune | On/Off | Off | Pitch bend based on neighbor count |
 | Life: Pitch | Microtune Amount | 0-100 | 50 | Pitch bend intensity |
 
-Commander commands and keyboard shortcuts write through APVTS, so changes are recorded in DAW automation lanes.
+Parameter-backed Commander commands and keyboard shortcuts notify the host, so they can be recorded in DAW automation. Editor-only state, such as the current cursor and paint channel, is not automatable.
 
-#### MIDI Output
+### MIDI output
 
 The plugin sends MIDI in two ways:
+
 1. **Host MIDI bus**: Routed through the DAW's MIDI output (for instrument chains).
 2. **Virtual MIDI port "Orca"**: Available system-wide to any application listening for MIDI input.
 
-<img src='https://raw.githubusercontent.com/hundredrabbits/Orca/master/resources/preview.jpg' width="600"/>
+<img src="resources/preview.jpg" width="600" alt="Orca grid interface" />
 
 ## Operators
 
-To display the list of operators inside of Orca, use `CmdOrCtrl+G`.
+In the Electron app, `CmdOrCtrl+G` toggles the operator guide. In the plugin, the status bar identifies the operator and port beneath the cursor; `Cmd+G` is reserved for Life mode.
 
 - `A` **add**(*a* b): Outputs sum of inputs.
 - `B` **subtract**(*a* b): Outputs difference of inputs.
@@ -137,10 +202,10 @@ To display the list of operators inside of Orca, use `CmdOrCtrl+G`.
 - `:` **midi**(channel octave note velocity length): Sends a MIDI note.
 - `%` **mono**(channel octave note velocity length): Sends monophonic MIDI note.
 - `!` **cc**(channel knob value): Sends MIDI control change.
-- `?` **pb**(channel value): Sends MIDI pitch bench.
+- `?` **pb**(channel value): Sends MIDI pitch bend.
 - `;` **udp**: Sends UDP message.
 - `=` **osc**(*path*): Sends OSC message.
-- `$` **self**: Sends [ORCA command](#Commands).
+- `$` **self**: Sends a command to the active platform's Commander.
 
 ### Generative
 
@@ -158,89 +223,95 @@ To display the list of operators inside of Orca, use `CmdOrCtrl+G`.
 - `\` **swing**(delay): Alternates between immediate and delayed bangs. Odd bangs pass through instantly, even bangs are delayed by N frames. Uses 3 south cells (toggle, countdown, output).
 - `/` **deflect**: Redirects adjacent movers (N/S/E/W) to point away. Any mover next to `/` gets rewritten to face outward — e.g. `S` to the east of `/` becomes `E`, `S` above `/` becomes `N`. Works as a passive obstacle that redirects instead of destroying. Preserves uppercase/lowercase.
 
-## MIDI
+## MIDI, UDP, and OSC
 
-The [MIDI](https://en.wikipedia.org/wiki/MIDI) operator `:` takes up to 5 inputs('channel, 'octave, 'note, velocity, length). 
+### MIDI notes
 
-For example, `:25C`, is a **C note, on the 5th octave, through the 3rd MIDI channel**, `:04c`, is a **C# note, on the 4th octave, through the 1st MIDI channel**. Velocity is an optional value from `0`(0/127) to `g`(127/127). Note length is the number of frames during which a note remains active. See it in action with [midi.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_midi.orca).
+The [MIDI](https://en.wikipedia.org/wiki/MIDI) operator `:` takes five inputs: channel, octave, note, velocity, and length.
 
-## MIDI MONO
+For example, `:25C` sends C5 on MIDI channel 3; `:04c` sends C-sharp 4 on MIDI channel 1. Orca channel values are zero-based, while many MIDI interfaces display channels as 1-16. Velocity is optional and ranges from `0` (0/127) to `g` (127/127). Length is the number of frames for which the note remains active. See [midi.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_midi.orca) for an example.
 
-The [MONO](https://en.wikipedia.org/wiki/Monophony) operator `%` takes up to 5 inputs('channel, 'octave, 'note, velocity, length). 
+### Monophonic MIDI
 
-This operator is very similar to the default Midi operator, but **each new note will stop the previously playing note**, would its length overlap with the new one. Making certain that only a single note is ever played at once, this is ideal for monophonic analog synthesisers that might struggle to dealing with chords and note overlaps.
+The [mono](https://en.wikipedia.org/wiki/Monophony) operator `%` takes the same five inputs as `:`.
 
-## MIDI CC
+Each new note stops the previous note on that channel if their lengths overlap. This makes `%` suitable for monophonic synthesizers and patches that should not receive chords.
 
-The [MIDI CC](https://www.sweetwater.com/insync/continuous-controller/) operator `!` takes 3 inputs('channel, 'knob, 'value).
+### MIDI CC
 
-It sends a value **between 0-127**, where the value is calculated as a ratio of 36, over a maximum of 127. For example, `!008`, is sending **28**, or `(8/36)*127` through the first channel, to the control mapped with `id0`. You can press **enter**, with the `!` operator selected, to assign it to a controller. By default, the operator sends to `CC64` [and up](https://nickfever.com/Music/midi-cc-list), the offset can be changed with the [command](#commands) `cc:0`, to set the offset to 0.
+The MIDI CC operator `!` takes channel, knob, and value inputs.
 
-## MIDI PITCHBEND
+Values are scaled from Orca's base-36 range to MIDI's 0-127 range. For example, `!008` sends value 28 to the first channel's offset controller. The default CC offset is 64; use `cc:0` to start at CC 0.
 
-The [MIDI PB](https://www.sweetwater.com/insync/pitch-bend/) operator `?` takes 3 inputs('channel, 'lsb, 'msb).
+### MIDI pitch bend
 
-It sends two different values **between 0-127**, where the value is calculated as a ratio of 36, over a maximum of 127. For example, `?008`, is sending an MSB of **28**, or `(8/36)*127` and an LSB of 0 through the first midi channel.
+The pitch-bend operator `?` takes channel, LSB, and MSB inputs.
 
-## MIDI BANK SELECT / PROGRAM CHANGE
+Both value bytes are scaled to 0-127. For example, `?008` sends LSB 0 and MSB 28 on the first MIDI channel.
 
-This is a command (see below) rather than an operator and it combines the [MIDI program change and bank select functions](https://www.sweetwater.com/sweetcare/articles/6-what-msb-lsb-refer-for-changing-banks-andprograms/). 
+### Bank select and program change
 
-The syntax is `pg:channel;msb;lsb;program`. Channel is 0-15, msb/lsb/program are 0-127, but program will automatically be translated to 1-128 by the MIDI driver. `program` typically corresponds to a "patch" selection on a synth. Note that `msb` may also be identified as "bank" and `lsb` as "sub" in some applications (like Ableton Live). 
+Program changes are sent through the Commander rather than an operator:
 
-`msb` and `lsb` can be left blank if you only want to send a simple program change. For example, `pg:0;;;63` will set the synth to patch number 64 (without changing the bank)
+```text
+pg:channel;msb;lsb;program
+```
 
-## UDP
+Channel is 0-15; MSB, LSB, and program are 0-127. Many instruments display program 0 as patch 1. MSB and LSB may also be labeled bank and sub-bank. Leave either bank field blank to omit it; for example, `pg:0;;;63` sends program 63 without changing the bank.
 
-The [UDP](https://nodejs.org/api/dgram.html#dgram_socket_send_msg_offset_length_port_address_callback) operator `;` locks each consecutive eastwardly ports. For example, `;hello`, will send the string "hello", on bang, to the port `49160` on `localhost`. In commander, use `udp:7777` to select the **custom UDP port 7777**, and `ip:127.0.0.12` to change the target IP. UDP is not available in the browser version of Orca.
+### UDP
 
-You can use the [listener.js](https://github.com/hundredrabbits/Orca/blob/master/resources/listener.js) to test UDP messages. See it in action with [udp.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_udp.orca).
+The UDP operator `;` consumes consecutive cells to its east and sends them as a string when banged. For example, `;hello` sends `hello` to the configured output. The default output is `127.0.0.1:49161`; use `udp:7777` to change the port and `ip:127.0.0.12` to change the target. UDP is available in the Electron and plugin builds, not the browser build.
 
-## OSC
+You can use [`resources/listener.js`](resources/listener.js) to test UDP messages. See it in action with [udp.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_udp.orca).
 
-The [OSC](https://github.com/MylesBorins/node-osc) operator `=` locks each consecutive eastwardly ports. The first character is used for the path, the following characters are sent as integers using the [base36 Table](https://github.com/hundredrabbits/Orca#base36-table). In commander, use `osc:7777` to select the **custom OSC port 7777**, and `ip:127.0.0.12` to change the target IP. OSC is not available in the browser version of Orca.
+### OSC
 
-For example, `=1abc` will send `10`, `11` and `12` to `/1`, via the port `49162` on `localhost`; `=a123` will send `1`, `2` and `3`, to the path `/a`. You can use the [listener.js](https://github.com/hundredrabbits/Orca/blob/master/resources/listener.js) to test OSC messages. See it in action with [osc.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_osc.orca) or try it with [SonicPi](https://github.com/hundredrabbits/Orca/blob/master/resources/TUTORIAL.md#sonicpi).
+The OSC operator `=` consumes consecutive cells to its east. The first character becomes the OSC path; the remaining characters are sent as integers using the [base-36 table](#base-36-table). The default output is `127.0.0.1:49162`; use `osc:7777` and `ip:127.0.0.12` to change it. OSC is available in the Electron and plugin builds, not the browser build.
 
-<img src='https://raw.githubusercontent.com/hundredrabbits/Orca/master/resources/preview.hardware.jpg' width="600"/>
+For example, `=1abc` sends 10, 11, and 12 to `/1`; `=a123` sends 1, 2, and 3 to `/a`. Use [`resources/listener.js`](resources/listener.js) to test OSC, see [osc.orca](https://git.sr.ht/~rabbits/orca-examples/tree/master/basics/_osc.orca), or follow the [Sonic Pi example](resources/TUTORIAL.md#sonicpi).
 
-## Advanced Controls
+<img src="resources/preview.hardware.jpg" width="600" alt="Orca controlling external hardware" />
 
-Some of Orca's features can be **controlled externally** via UDP though port `49160`, or via its own command-line interface. To activate the command-line prompt, press `CmdOrCtrl+K`. The prompt can also be used to inject patterns or change settings.
+## Desktop Commander and project mode
+
+This section describes the browser/Electron Commander. The plugin has a related but separate [Plugin Commander](#plugin-commander).
+
+In Electron, Orca can receive commands over UDP port `49160`. Press `CmdOrCtrl+K` to open the local Commander prompt, which can control transport, inject patterns, and change settings.
 
 ### Project Mode
 
-You can **quickly inject orca files** into the currently active file, by using the command-line prompt — Allowing you to navigate across multiple files like you would a project. Press `CmdOrCtrl+L` to load multiple orca files, then press `CmdOrCtrl+B` and type the name of a loaded `.orca` file to inject it.
+Project mode lets you inject saved Orca files into the active grid. Press `CmdOrCtrl+L` to load multiple `.orca` files, then press `CmdOrCtrl+B` and enter a loaded file's name and optional coordinates.
 
 ### Default Ports
 
-| UDP Input  | OSC Input  | UDP Output | OSC Output |
-| ---------- | ---------- | ---------- | -----------|
-| 49160      | None       | 49161      | 49162
+| UDP Input | OSC Input | UDP Output | OSC Output |
+|-----------|-----------|------------|------------|
+| 49160 | — | 49161 | 49162 |
 
-### Commands
+### Desktop Commander commands
 
-All commands have a shorthand equivalent to their first two characters, for example, `write` can also be called using `wr`. You can see the full list of commands [here](https://github.com/hundredrabbits/Orca/blob/master/desktop/sources/scripts/commander.js).
+Desktop commands accept their first two characters as shorthand; for example, `write` can be entered as `wr`. The implementation in [`commander.js`](desktop/sources/scripts/commander.js) is the authoritative list.
 
-- `play` Plays program.
-- `stop` Stops program.
-- `run` Runs current frame.
-- `bpm:140` Sets bpm speed to `140`.
-- `apm:160` Animates bpm speed to `160`.
-- `frame:0` Sets the frame value to `0`.
-- `skip:2` Adds `2`, to the current frame value.
-- `rewind:2` Removes `2`, to the current frame value.
-- `color:f00;0f0;00f` Colorizes the interface.
-- `find:aV` Sends cursor to string `aV`.
-- `select:3;4;5;6` Move cursor to position `3,4`, and select size `5:6`(optional).
-- `inject:pattern;12;34` Inject the local file `pattern.orca`, at `12,34`(optional).
-- `write:H;12;34` Writes glyph `H`, at `12,34`(optional).
-- `time` Prints the time, in minutes seconds, since `0f`.
-- `midi:1;2` Set Midi output device to `#1`, and input device to `#2`.
-- `udp:1234` Set UDP output port to `1234`.
-- `osc:1234` Set OSC output port to `1234`.
-- `ip:127.0.0.12` Set target IP for UDP/OSC output.
-- `groove:75;25` Set groove ratios (see [Groove](#groove)).
+- `play`: Play the program.
+- `stop`: Stop the program.
+- `run`: Run one frame.
+- `bpm:140`: Set the tempo to 140 BPM.
+- `apm:160`: Animate the tempo toward 160 BPM.
+- `frame:0`: Set the frame counter to 0.
+- `skip:2`: Advance the frame counter by 2.
+- `rewind:2`: Move the frame counter back by 2.
+- `color:f00;0f0;00f`: Change the interface colors.
+- `find:aV`: Move the cursor to the first `aV` match.
+- `select:3;4;5;6`: Move to `(3,4)` and optionally select a `5x6` block.
+- `inject:pattern;12;34`: Inject `pattern.orca`, optionally at `(12,34)`.
+- `write:H;12;34`: Write `H`, optionally at `(12,34)`.
+- `time`: Write the elapsed minutes and seconds since frame 0.
+- `midi:1;2`: Select MIDI output device 1 and input device 2.
+- `udp:1234`: Set the UDP output port.
+- `osc:1234`: Set the OSC output port.
+- `ip:127.0.0.12`: Set the UDP/OSC target address.
+- `groove:75;25`: Set groove ratios; see [Groove](#groove).
 
 ## Groove
 
@@ -271,16 +342,16 @@ Use the command prompt (`CmdOrCtrl+K`) and type `groove:75;25`.
 
 ### Plugin (AU/VST3)
 
-- **Cmd+G**: Opens a dialog to enter groove ratios manually (e.g. `75;25`).
-- **Shuffle slider**: A DAW-automatable parameter (0-200%) that maps to a 3-step groove. 0% = max inverse swing, 100% = straight, 200% = max swing.
+- Enter ratios through the Plugin Commander, for example `groove:75;25`.
+- Automate the Shuffle parameter from 0-200%. It maps to a balanced three-step groove: 0% is maximum inverse swing, 100% is straight, and 200% is maximum swing.
 
 The current groove is displayed in the status bar as `groove:75;25;50`.
 
-#### Commander (Command Prompt)
+## Plugin Commander
 
-Press `Cmd+K` to open the command prompt, or `Cmd+F` to open with `find:` pre-filled. Type a command and press Enter to execute, or Escape to cancel. Up/Down arrows recall command history.
+Press `Cmd+K` to open the plugin's command prompt, or `Cmd+F` to open it with `find:` pre-filled. Press Enter to execute, Escape to cancel, and Up/Down to navigate command history.
 
-All commands support 2-letter shorthands (first two characters).
+The tables list each supported shorthand. Universal commands work in classic and Life modes; Life commands are accepted only while Life mode is active.
 
 **Universal commands (both modes):**
 
@@ -288,16 +359,21 @@ All commands support 2-letter shorthands (first two characters).
 |---------|-------|-------------|
 | `find:text` | `fi` | Find text in grid and move cursor to first match |
 | `select:x;y;w;h` | `se` | Move cursor and optionally set selection size |
-| `write:text;x;y` | `wr` | Write text at position (or cursor if x;y omitted) |
 | `groove:75;25` | `gr` | Set groove ratios |
 | `cc:0` | `cc` | Set MIDI CC offset |
 | `pg:ch;msb;lsb;pgm` | `pg` | MIDI program change with optional bank select |
 | `copy` | `co` | Copy selection |
 | `paste` | `pa` | Paste clipboard |
 | `erase` | `er` | Erase selection |
-| `time` | `ti` | Write current time at cursor |
 | `color:f00;0f0;00f` | `cl` | Set theme colors (bLow;bMed;bHigh as hex RGB) |
 | `inject:name` | `in` | Inject cached module at cursor (or `inject:name;x;y`) |
+
+**Classic-mode commands:**
+
+| Command | Short | Description |
+|---------|-------|-------------|
+| `write:text;x;y` | `wr` | Write text at position (or cursor if x;y is omitted) |
+| `time` | `ti` | Write the current time at the cursor |
 | `clean` | -- | Remove all movers (N/S/E/W) and bangs (*) from grid (skips halted) |
 | `autoclean` | -- | Toggle auto-clean on transport stop (`autoclean:on`/`off`) |
 
@@ -329,12 +405,15 @@ All commands support 2-letter shorthands (first two characters).
 | `minvel:60` | `mv` | Set floor velocity at max age (1-127, default 40) |
 | `minprob:10` | `mp` | Set floor fire probability at max age (1-100%, default 10) |
 | `maxnotes:4` | `mn` | Set max notes per step per channel (0=unlimited) |
-| `seq` | `sq` | Cycle sequencer mode: off → forward → reverse → mirror → random |
+| `seq` | `sq` | Toggle sequencer mode between off and forward |
+| `seq:forward/reverse/mirror/random/euclid:N` | `sq` | Select a sequencer mode; `N` sets Euclid pulses |
+| `euclid:3` | `eu` | Set the Euclid pulse count (1-32) |
+| `orient:h` | `or` | Set horizontal scan; use `orient:v` for vertical, or omit the value to toggle |
 | `lockoct` | `lo` | Toggle octave lock (prevent octave drift on birth) |
 | `chord` | `cd` | Toggle chord filter (off ↔ 135). Use `chord:1357`, `chord:125`, etc. for custom degrees |
 | `dedup` | `dd` | Toggle note deduplication (merge identical notes, scale velocity by count) |
 | `dedupcc:1` | `dc` | Set CC number for dedup count modulation (-1=disabled) |
-| `rule:23/36` | `ru` | Set CA rule in S/B notation (or preset: `life`, `highlife`, `34life`, `seeds`, `diamoeba`, `daynight`, `replicator`, `2x2`) |
+| `rule:23/36` | `ru` | Set a survival/birth rule or preset: `life`, `highlife`, `34life`, `seeds`, `diamoeba`, `daynight`, `replicator`, `2x2`, `morley` |
 | `conductor` | `cn` | Toggle conductor mode (manual evolution) |
 | `microtune` | `mt` | Toggle microtuning pitch bend |
 | `microtune:75` | `mt` | Set microtune amount (0-100) |
@@ -347,20 +426,28 @@ The `$` (self) operator also sends commands through the commander. For example, 
 
 ## Life Mode
 
-Orca includes a **Game of Life sequencer mode** — a completely different mode where the grid runs Conway's Game of Life rules with musical note cells. Cells are born, survive, and die according to GoL rules, triggering MIDI notes on birth and silencing on death.
+Life mode is a plugin-only cellular-automata sequencer. Instead of executing Orca operators, the grid evolves musical cells: births, survivors, and deaths drive MIDI notes while the DAW transport provides timing.
+
+### Quick start
+
+1. Load the plugin before a MIDI instrument and start the DAW transport. In the standalone build, press Space to start its internal transport.
+2. Press `Cmd+G` to enter Life mode.
+3. Press Tab to choose an octave and Shift+Tab to choose a MIDI channel.
+4. Type `A-G` for natural notes or `a-g` for sharps. Use the arrow keys to move and Backspace to erase.
+5. Open the [Plugin Commander](#plugin-commander) with `Cmd+K` to set the scale, evolution rate, sequencer mode, and other musical rules.
 
 ### Entering Life Mode
 
-Press `Cmd+G` to toggle between normal Orca mode and Life mode. In Life mode, the grid is replaced with a cellular automaton where each alive cell represents a musical note.
+Press `Cmd+G` to toggle between classic Orca and Life mode. Entering Life mode converts existing letter cells into live cells using the active paint channel and octave. Leaving Life mode silences Life notes and copies surviving note letters back to the classic grid.
 
 ### How It Works
 
-- **Alive cells** have a note (A-G), MIDI channel (0-15), and octave (0-7)
-- **Birth**: When a dead cell has exactly 3 alive neighbors, a new cell is born. Its note is derived by stepping up or down within the current scale, based on the direction of propagation relative to its parents
-- **Survival**: Cells with 2-3 neighbors survive
-- **Death**: Cells with fewer than 2 or more than 3 neighbors die, sending a MIDI note-off
-- **Toroidal wrapping**: The grid wraps around — patterns going off one edge reappear on the opposite side
-- **Protected cells**: Locked cells are immune to death rules, acting as permanent anchors
+- **Alive cells** carry a note (`A-G` or `a-g`), MIDI channel (0-15), octave (0-8), age, and lock state.
+- **Birth:** Under the default rule, a dead cell with exactly three neighbors is born. Its pitch moves through the selected scale according to its position relative to its parents.
+- **Survival:** Under the default rule, live cells with two or three neighbors survive.
+- **Death:** Other live cells die and release their MIDI notes.
+- **Toroidal wrapping:** The simulation wraps at every edge.
+- **Protected cells:** Locked cells ignore death rules and act as permanent anchors.
 
 ### Modes
 
@@ -392,21 +479,22 @@ Notes evolve within a selected scale. Available scales: chromatic, major, minor,
 
 ### Sequencer Mode
 
-**Sequencer mode** (`seq`) transforms the grid into a step sequencer by staggering note emission across rows. Four variants are available — cycle through them with the `seq` command or automate via APVTS:
+Sequencer mode staggers note emission across row or column groups during each evolution cycle. Use `seq:<mode>` to select a mode, `orient:v` for a top-to-bottom row scan, or `orient:h` for a left-to-right column scan. All controls are also available as DAW parameters.
 
 | Variant | Description |
 |---------|-------------|
-| `seq:forward` | Top-to-bottom scan (default seq behavior) |
-| `seq:reverse` | Bottom-to-top scan |
+| `seq:off` | Emit eligible notes together without phase scanning |
+| `seq:forward` | Scan in the selected orientation |
+| `seq:reverse` | Scan in the opposite direction |
 | `seq:mirror` | Ping-pong — alternates direction each evolution cycle |
-| `seq:random` | Random row order, reshuffled each evolution |
+| `seq:random` | Randomize phase order whenever the grid evolves |
+| `seq:euclid:N` | Evenly distribute `N` active phases across the evolution rate |
 
-- Instead of all rows firing simultaneously, each row group fires on a different frame within the evolve cycle
-- With `rate:8` and 16 rows: rows 0-1 fire on frame 0, rows 2-3 on frame 1, etc.
-- Visual guides show phase group boundaries; a sweeping highlight shows the active row group
-- Later rows naturally get shorter notes, reinforcing the sequential feel
-- Disables ratchet clustering (cells fire individually with phase scheduling)
-- No effect when `rate:1`
+- With `rate:8` and 16 rows in vertical orientation, rows 0-1 fire on frame 0, rows 2-3 on frame 1, and so on.
+- Visual separators show phase groups, and a translucent sweep marks the active group.
+- `euclid:3` changes the Euclid pulse count without changing the selected sequencer mode.
+- Sequencer mode emits cells individually through phase scheduling rather than ratchet clustering.
+- Phase scanning has no audible effect when `rate:1`.
 
 ### Octave Lock
 
@@ -439,21 +527,21 @@ Works with any scale — for pentatonic scales (5 notes or fewer), all notes are
 
 ### Cellular Automata Rules
 
-By default, Life mode uses Conway's Game of Life (B3/S23). You can change the rules with the `rule` command:
+By default, Life mode uses Conway's Game of Life (conventionally B3/S23). Commander values use `survival/birth` order, so Conway is written `23/3`:
 
-| Preset | S/B Notation | Description |
+| Preset | Survival/Birth | Description |
 |--------|-------------|-------------|
 | `life` | 23/3 | Conway's Game of Life (default) |
 | `highlife` | 23/36 | Self-replicating patterns |
 | `34life` | 34/34 | Exploding/chaotic growth |
 | `seeds` | /2 | All cells die, birth with 2 neighbors |
 | `diamoeba` | 5678/35678 | Diamond-shaped amoeba patterns |
-| `daynight` | 3678/3678 | Symmetric day/night behavior |
+| `daynight` | 34678/3678 | Symmetric day/night behavior |
 | `replicator` | 1357/1357 | Self-replicating patterns |
 | `2x2` | 125/36 | 2×2 block patterns |
 | `morley` | 245/368 | Move/Morley |
 
-Custom rules: `rule:23/36` — digits before `/` are survival counts, after `/` are birth counts.
+For custom rules, digits before `/` are survival counts and digits after `/` are birth counts. For example, `rule:23/36` selects HighLife.
 
 ### Conductor Mode
 
@@ -504,6 +592,7 @@ Control the octave range with `minoct:N` and `maxoct:N`:
 ### Pattern Library
 
 Life mode includes a library of classic GoL patterns organized by category:
+
 - **Still Lifes** (11): Block, Beehive, Loaf, Boat, Tub, Pond, Ship, Long Boat, Barge, Mango, Eater 1
 - **Oscillators** (14): Blinker, Toad, Beacon, Pulsar, Pentadecathlon, Clock, Octagon 2, Figure 8, Tumbler, Fumarole, Queen Bee Shuttle, Twin Bees Shuttle, Ants, Turning Toads
 - **Spaceships** (9): Glider (4 directions), LWSS, MWSS, HWSS, Copperhead, Loafer
@@ -532,7 +621,8 @@ Patterns are placed with random notes from the current scale, using the active p
 | `Enter` (conductor) | Trigger evolution |
 | `Enter` (stamp mode) | Place pattern |
 | `Escape` (stamp mode) | Cancel stamp mode |
-| `Cmd+E` | Toggle loop playback / Rotate selection 90° clockwise |
+| `Cmd+E` | Toggle recorded-loop playback |
+| `Cmd+Shift+E` | Rotate selection 90° clockwise |
 | `Cmd+T` | Toggle conductor mode |
 | `Cmd+U` | Toggle microtuning |
 | `Cmd+Shift+H` | Mirror selection horizontal |
@@ -543,15 +633,21 @@ Patterns are placed with random notes from the current scale, using the active p
 | `Cmd+Shift+R` | Save current state as new initial |
 | `Cmd+Z` | Undo |
 | `Cmd+Shift+Z` | Redo |
-| `Cmd+S` | Save as .life file |
+| `Cmd+S` | Save as a `.life` file |
 
 ### .life File Format
 
-Life mode uses its own file format (`.life`) separate from `.orca` files. Files can be saved with `Cmd+S` and loaded via drag-and-drop. The format stores grid dimensions, cell data (note, channel, octave, lock state), and all settings (scale, root, evolve rate, pulse mode, decay, min velocity, min probability, max notes, sequencer mode, octave lock, chord filter, dedup, dedup CC, min/max octave, CA rule).
+Classic `.orca` files are plain-text grids. Life mode uses a separate text-based `.life` format because every cell also needs channel, octave, and lock metadata.
 
-## Base36 Table
+Save the active format with `Cmd+S`; open either format with `Cmd+O` or drag it onto the plugin. A `.life` file stores grid dimensions, live-cell metadata, scale, root, evolution rate, pulse mode, decay controls, maximum-note limit, sequencer mode, octave lock and range, chord filter, deduplication settings, and the cellular-automata rule. Settings absent from older files use defaults when loaded.
 
-Orca operates on a base of **36 increments**. Operators using numeric values will typically also operate on letters and convert them into values as per the following table. For instance `Do` will bang every *24th frame*. 
+The `.life` format round-trips sequencer mode, Euclid pulse count, and scan orientation. It does not yet store the paint cursor, conductor/microtuning state, or generation loops. DAW project state stores automatable parameters separately through the host.
+
+## Reference tables
+
+### Base-36 table
+
+Orca uses base 36. Numeric operator inputs accept digits and letters according to the following table. For example, `Do` bangs every 24th frame.
 
 | **0** | **1** | **2** | **3** | **4** | **5** | **6** | **7** | **8** | **9** | **A** | **B**  | 
 | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:    | 
@@ -561,9 +657,9 @@ Orca operates on a base of **36 increments**. Operators using numeric values wil
 | **O** | **P** | **Q** | **R** | **S** | **T** | **U** | **V** | **W** | **X** | **Y** | **Z**  | 
 | 24    | 25    | 26    | 27    | 28    | 29    | 30    | 31    | 32    | 33    | 34    | 35     |
 
-## Transpose Table
+### Transpose table
 
-The midi operator interprets any letter above the chromatic scale as a transpose value, for instance `3H`, is equivalent to `4A`.
+The MIDI operators interpret letters beyond the chromatic scale as transpositions. For example, `3H` is equivalent to `4A`.
 
 | **0** | **1** | **2** | **3** | **4** | **5** | **6** | **7** | **8** | **9** | **A** | **B**  | 
 | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:   | :-:    | 
@@ -580,7 +676,7 @@ The midi operator interprets any letter above the chromatic scale as a transpose
 - [Estra](https://github.com/kyleaedwards/estra), a companion sampler tool.
 - [Gull](https://github.com/qleonetti/gull), a companion sampler, slicer and synth tool.
 - [Sonic Pi](https://in-thread.sonic-pi.net/t/using-orca-to-control-sonic-pi-with-osc/2381/), a livecoding environment.
-- [Remora](https://github.com/martinberlin/Remora), a ESP32 Led controller firmware.
+- [Remora](https://github.com/martinberlin/Remora), ESP32 LED controller firmware.
 
 ## Links
 
@@ -597,5 +693,5 @@ The midi operator interprets any letter above the chromatic scale as a transpose
 - This application supports the [Ecosystem Theme](https://github.com/hundredrabbits/Themes).
 - Download and share your patches on [PatchStorage](http://patchstorage.com/platform/orca/).
 - Support this project through [Patreon](https://www.patreon.com/hundredrabbits).
-- See the [License](LICENSE.md) file for license rights and limitations (MIT).
-- Pull Requests are welcome!
+- See [LICENSE.md](LICENSE.md) for license rights and limitations (MIT).
+- Pull requests are welcome!
