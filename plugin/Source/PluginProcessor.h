@@ -60,6 +60,8 @@ public:
     juce::AudioParameterChoice* lifeScaleParam    = nullptr;
     juce::AudioParameterChoice* lifeRootParam     = nullptr;
     juce::AudioParameterBool*   lifePulseParam    = nullptr;
+    juce::AudioParameterInt*    lifeEuclidParam   = nullptr;
+    juce::AudioParameterBool*   lifeSeqHorizParam = nullptr;
     juce::AudioParameterChoice* lifeRuleParam     = nullptr;
     juce::AudioParameterBool*   lifeConductorParam = nullptr;
     juce::AudioParameterBool*   lifeMicrotuneParam = nullptr;

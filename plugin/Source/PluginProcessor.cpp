@@ -19,7 +19,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrcaProcessor::createParamet
         juce::ParameterID("life_rate", 1), "Evolve Rate", 1, 32, 4));
     timingGroup->addChild(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID("life_seq", 1), "Seq Mode",
-        juce::StringArray{"Off", "Forward", "Reverse", "Mirror", "Random"}, 0));
+        juce::StringArray{"Off", "Forward", "Reverse", "Mirror", "Random", "Euclid"}, 0));
+    timingGroup->addChild(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID("life_euclid", 1), "Euclid Pulses", 1, 32, 3));
+    timingGroup->addChild(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("life_seq_horiz", 1), "Seq Horizontal", false));
     timingGroup->addChild(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID("life_pulse", 1), "Pulse Mode", true));
     timingGroup->addChild(std::make_unique<juce::AudioParameterBool>(
@@ -103,6 +107,8 @@ OrcaProcessor::OrcaProcessor()
     lifeScaleParam   = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("life_scale"));
     lifeRootParam    = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("life_root"));
     lifePulseParam   = dynamic_cast<juce::AudioParameterBool*>  (apvts.getParameter("life_pulse"));
+    lifeEuclidParam  = dynamic_cast<juce::AudioParameterInt*>   (apvts.getParameter("life_euclid"));
+    lifeSeqHorizParam = dynamic_cast<juce::AudioParameterBool*> (apvts.getParameter("life_seq_horiz"));
     lifeRuleParam    = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("life_rule"));
     lifeConductorParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("life_conductor"));
     lifeMicrotuneParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("life_microtune"));
@@ -135,7 +141,14 @@ void OrcaProcessor::syncParamsToLifeGrid() {
     if (newSeqMode == orca::LifeGrid::SeqRandom &&
         (lg.seqMode != orca::LifeGrid::SeqRandom || rateChanged))
         lg.shufflePhaseTable();
+    int newEuclidPulses = lifeEuclidParam->get();
+    if (newSeqMode == orca::LifeGrid::SeqEuclid &&
+        (lg.seqMode != orca::LifeGrid::SeqEuclid || rateChanged || newEuclidPulses != lg.euclidPulses)) {
+        lg.euclidPulses = newEuclidPulses;
+        lg.generateEuclidean();
+    }
     lg.seqMode      = newSeqMode;
+    lg.seqHorizontal = lifeSeqHorizParam->get();
     lg.lockOctave   = lifeLockOctParam->get();
     lg.dedup        = lifeDedupParam->get();
     lg.dedupCC      = lifeDedupCCParam->get();

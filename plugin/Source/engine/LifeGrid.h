@@ -818,8 +818,9 @@ public:
     }
 
     // Row phase offset: stagger note emission across the evolve cycle by row
-    enum SeqMode { SeqOff = 0, SeqForward, SeqReverse, SeqMirror, SeqRandom };
+    enum SeqMode { SeqOff = 0, SeqForward, SeqReverse, SeqMirror, SeqRandom, SeqEuclid };
     SeqMode seqMode = SeqOff;
+    bool seqHorizontal = false; // false = top-to-bottom (rows), true = left-to-right (columns)
 
     // Mirror ping-pong state: flips direction each evolution cycle
     bool mirrorForward = true;
@@ -836,6 +837,18 @@ public:
             randomPhase[i] = randomPhase[j];
             randomPhase[j] = tmp;
         }
+    }
+
+    // Euclidean rhythm pattern for SeqEuclid
+    int euclidPulses = 3; // number of active steps
+    bool euclidPattern[512] = {};
+    void generateEuclidean() {
+        int steps = evolveRate;
+        if (steps <= 0) return;
+        int p = euclidPulses < 1 ? 1 : (euclidPulses > steps ? steps : euclidPulses);
+        // Bjorklund distribution via modular accumulator
+        for (int i = 0; i < steps; i++)
+            euclidPattern[i] = ((i * p) % steps) < p;
     }
 
     bool lockOctave = false; // born cells inherit parent octave (no octave shifts from scale stepping)
@@ -905,18 +918,28 @@ public:
         return bestNote;
     }
 
-    int phaseForRow(int y) const {
-        if (seqMode == SeqOff || evolveRate <= 1 || wrapH <= 0) return 0;
-        int forwardPhase = y * evolveRate / wrapH;
+    // Generic phase calculation: maps position (row or column) to frame offset
+    int phaseFor(int pos, int total) const {
+        if (seqMode == SeqOff || evolveRate <= 1 || total <= 0) return 0;
+        int forwardPhase = pos * evolveRate / total;
         switch (seqMode) {
             case SeqForward: return forwardPhase;
             case SeqReverse: return (evolveRate - 1) - forwardPhase;
             case SeqMirror:
-                // Ping-pong: alternates forward/reverse each cycle
                 return mirrorForward ? forwardPhase : (evolveRate - 1) - forwardPhase;
             case SeqRandom: return randomPhase[forwardPhase % evolveRate];
+            case SeqEuclid:
+                return euclidPattern[forwardPhase % evolveRate] ? forwardPhase : -1;
             default: return 0;
         }
+    }
+
+    int phaseForRow(int y) const { return phaseFor(y, wrapH); }
+    int phaseForCol(int x) const { return phaseFor(x, wrapW); }
+
+    // Phase for a cell, respecting orientation
+    int phaseForCell(int x, int y) const {
+        return seqHorizontal ? phaseForCol(x) : phaseForRow(y);
     }
 
     // Phase-scheduled notes (emitted on intermediate frames when phaseOffset is active)
@@ -1216,8 +1239,12 @@ public:
         } else {
             // Non-ratchet path: emit note-ons (with optional phase scheduling)
             for (int yy = 0; yy < wrapH; yy++) {
-            int rowPhase = phaseForRow(yy);
+            int rowPhase = seqHorizontal ? 0 : phaseForRow(yy);
+            if (rowPhase < 0) continue; // euclidean: this row group is gated off
             for (int xx = 0; xx < wrapW; xx++) {
+                int cellPhase = seqHorizontal ? phaseForCol(xx) : rowPhase;
+                if (cellPhase < 0) continue; // euclidean: this column group is gated off
+
                 int i = xx + w * yy;
                 if (!cells[i].alive) continue;
                 bool wasBorn = !buffer[i].alive || firstEvolution;
@@ -1231,12 +1258,12 @@ public:
                 tr.id = snapToChordTone(tr.id);
 
                 // Phase offset: schedule for later frame (maxNotes checked in processPhaseNotes)
-                if (rowPhase > 0 && phaseNoteCount < kMaxPhaseNotes) {
+                if (cellPhase > 0 && phaseNoteCount < kMaxPhaseNotes) {
                     phaseNotes[phaseNoteCount++] = {
                         static_cast<uint8_t>(tr.id),
                         cells[i].channel,
                         velocityFor(i),
-                        rowPhase, i
+                        cellPhase, i
                     };
                     continue;
                 }

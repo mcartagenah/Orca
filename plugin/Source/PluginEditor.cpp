@@ -43,29 +43,56 @@ void GridComponent::paint(juce::Graphics& g) {
 
     g.setFont(monoFont);
 
-    // Phase offset: row group guides + active phase highlight
+    // Phase offset: row/column group guides + active phase highlight
     if (engine.lifeMode && engine.lifeGrid.seqMode != orca::LifeGrid::SeqOff && engine.lifeGrid.evolveRate > 1) {
         int currentFrame = engine.lifeGrid.frameCounter;
         float totalW = gridW * tileW;
+        float totalH = gridH * tileH;
+        bool horiz = engine.lifeGrid.seqHorizontal;
 
-        // Draw separator lines between phase groups
-        int prevPhase = -1;
-        for (int y = 0; y < gridH; y++) {
-            int ph = engine.lifeGrid.phaseForRow(y);
-            if (ph != prevPhase && prevPhase >= 0) {
-                float ly = y * tileH;
-                g.setColour(juce::Colour(0x30ffffff));
-                g.fillRect(0.0f, ly, totalW, 1.0f);
+        if (horiz) {
+            // Horizontal: vertical separator lines between column groups
+            int prevGroup = -1;
+            for (int x = 0; x < gridW; x++) {
+                int group = (engine.lifeGrid.wrapW > 0)
+                            ? x * engine.lifeGrid.evolveRate / engine.lifeGrid.wrapW : 0;
+                if (group != prevGroup && prevGroup >= 0) {
+                    float lx = x * tileW;
+                    g.setColour(juce::Colour(0x30ffffff));
+                    g.fillRect(lx, 0.0f, 1.0f, totalH);
+                }
+                prevGroup = group;
             }
-            prevPhase = ph;
-        }
-
-        // Highlight the active phase rows
-        for (int y = 0; y < gridH; y++) {
-            if (engine.lifeGrid.phaseForRow(y) == currentFrame) {
-                float py = y * tileH;
-                g.setColour(juce::Colour(0x15ffffff));
-                g.fillRect(0.0f, py, totalW, tileH);
+            // Highlight active phase columns
+            for (int x = 0; x < gridW; x++) {
+                int ph = engine.lifeGrid.phaseForCol(x);
+                if (ph >= 0 && ph == currentFrame) {
+                    float px = x * tileW;
+                    g.setColour(juce::Colour(0x15ffffff));
+                    g.fillRect(px, 0.0f, tileW, totalH);
+                }
+            }
+        } else {
+            // Vertical (default): horizontal separator lines between row groups
+            int prevGroup = -1;
+            for (int y = 0; y < gridH; y++) {
+                int group = (engine.lifeGrid.wrapH > 0)
+                            ? y * engine.lifeGrid.evolveRate / engine.lifeGrid.wrapH : 0;
+                if (group != prevGroup && prevGroup >= 0) {
+                    float ly = y * tileH;
+                    g.setColour(juce::Colour(0x30ffffff));
+                    g.fillRect(0.0f, ly, totalW, 1.0f);
+                }
+                prevGroup = group;
+            }
+            // Highlight active phase rows
+            for (int y = 0; y < gridH; y++) {
+                int ph = engine.lifeGrid.phaseForRow(y);
+                if (ph >= 0 && ph == currentFrame) {
+                    float py = y * tileH;
+                    g.setColour(juce::Colour(0x15ffffff));
+                    g.fillRect(0.0f, py, totalW, tileH);
+                }
             }
         }
     }
@@ -90,11 +117,11 @@ void GridComponent::paint(juce::Graphics& g) {
     // Draw stamp mode ghost overlay
     if (stampMode && engine.lifeMode) {
         auto& p = orca::builtInPatterns[stampIndex];
+        int sw, sh; stampDims(p, sw, sh);
         auto channelCol = juce::Colour(channelColorValues[engine.paintChannel % 16]);
-        for (int py = 0; py < p.h; py++) {
-            for (int px = 0; px < p.w; px++) {
-                int srcIdx = px + p.w * py;
-                if (p.data[srcIdx] != 'X') continue;
+        for (int py = 0; py < sh; py++) {
+            for (int px = 0; px < sw; px++) {
+                if (stampCell(p, px, py) != 'X') continue;
                 int gx = cursorX + px, gy = cursorY + py;
                 if (gx >= gridW || gy >= gridH) continue;
                 float cellX = gx * tileW;
@@ -183,10 +210,15 @@ void GridComponent::paint(juce::Graphics& g) {
                   << " " << orca::LifeGrid::scaleName(engine.lifeGrid.currentScale)
                   << "  " << (engine.lifeGrid.pulseMode ? "pulse" : "hold")
                   << "  rate:" << engine.lifeGrid.evolveRate;
-            line1 << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqReverse ? "  seq:rev" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqMirror ? "  seq:mirror" :
-                      engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "");
+            if (engine.lifeGrid.seqMode == orca::LifeGrid::SeqEuclid)
+                line1 << "  seq:euclid:" << engine.lifeGrid.euclidPulses;
+            else
+                line1 << (engine.lifeGrid.seqMode == orca::LifeGrid::SeqForward ? "  seq" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqReverse ? "  seq:rev" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqMirror ? "  seq:mirror" :
+                          engine.lifeGrid.seqMode == orca::LifeGrid::SeqRandom ? "  seq:random" : "");
+            if (engine.lifeGrid.seqMode != orca::LifeGrid::SeqOff && engine.lifeGrid.seqHorizontal)
+                line1 << " h";
             if (engine.lifeGrid.conductorMode) line1 << "  cond";
             if (engine.lifeGrid.chordDegreeCount > 0)
                 line1 << "  chd:" << engine.lifeGrid.chordDegreesString();
@@ -202,6 +234,9 @@ void GridComponent::paint(juce::Graphics& g) {
             if (stampMode) {
                 line2 << "STAMP: " << stampCategories[stampCategory].name
                       << " > " << orca::builtInPatterns[stampIndex].name;
+                if (stampRotation == 1) line2 << " 90";
+                else if (stampRotation == 2) line2 << " 180";
+                else if (stampRotation == 3) line2 << " 270";
             } else {
                 line2 << gridW << "x" << gridH
                       << "  udp:" << processor.udpOutputPort
@@ -822,6 +857,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && code == 'P') {
         auto& engine = processor.engine;
         if (engine.lifeMode) {
+            stampRotation = 0;
             if (!stampMode) {
                 stampMode = true;
                 stampCategory = 0;
@@ -839,8 +875,17 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
         }
     }
 
+    // Stamp mode: Cmd+R / Cmd+Shift+R = rotate stamp
+    if (stampMode && cmd && code == 'R') {
+        stampRotation = shift
+            ? (stampRotation + 3) % 4   // CCW
+            : (stampRotation + 1) % 4;  // CW
+        return true;
+    }
+
     // Stamp mode: Cmd+] / Cmd+[ = cycle category
     if (stampMode && cmd && (code == ']' || code == '[')) {
+        stampRotation = 0;
         if (code == ']')
             stampCategory = (stampCategory + 1) % numStampCategories;
         else
@@ -859,14 +904,14 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Stamp mode: Enter = place pattern
     if (stampMode && code == juce::KeyPress::returnKey) {
         auto& p = orca::builtInPatterns[stampIndex];
+        int sw, sh; stampDims(p, sw, sh);
         const juce::SpinLock::ScopedLockType lock(processor.engineLock);
         auto& lg = processor.engine.lifeGrid;
         pushLifeHistory();
 
-        for (int py = 0; py < p.h; py++) {
-            for (int px = 0; px < p.w; px++) {
-                int srcIdx = px + p.w * py;
-                char c = p.data[srcIdx];
+        for (int py = 0; py < sh; py++) {
+            for (int px = 0; px < sw; px++) {
+                char c = stampCell(p, px, py);
                 int destIdx = lg.indexAt(cursorX + px, cursorY + py);
                 if (destIdx < 0) continue;
 
@@ -891,6 +936,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Stamp mode: Escape = cancel
     if (stampMode && code == juce::KeyPress::escapeKey) {
         stampMode = false;
+        stampRotation = 0;
         return true;
     }
 
@@ -2084,9 +2130,35 @@ bool Commander::trigger(OrcaProcessor& processor, GridComponent& editor) {
         else if (val == "reverse" || val == "rev") idx = 2;
         else if (val == "mirror" || val == "mir") idx = 3;
         else if (val == "random" || val == "rand" || val == "rnd") idx = 4;
+        else if (val.startsWith("euclid") || val.startsWith("euc")) {
+            idx = 5;
+            // Parse optional pulse count: seq:euclid:N or seq:euc:N
+            auto colonIdx = val.indexOfChar(':');
+            if (colonIdx >= 0) {
+                int pulses = val.substring(colonIdx + 1).getIntValue();
+                if (pulses >= 1 && pulses <= 32)
+                    processor.lifeEuclidParam->setValueNotifyingHost(
+                        processor.lifeEuclidParam->convertTo0to1(pulses));
+            }
+        }
         else idx = (processor.lifeSeqParam->getIndex() == 0) ? 1 : 0; // toggle
         processor.lifeSeqParam->setValueNotifyingHost(
             processor.lifeSeqParam->convertTo0to1(idx));
+    }
+    else if (isLife && (cmd.name == "euclid" || cmd.name == "euc")) {
+        int pulses = cmd.value.getIntValue();
+        if (pulses >= 1 && pulses <= 32)
+            processor.lifeEuclidParam->setValueNotifyingHost(
+                processor.lifeEuclidParam->convertTo0to1(pulses));
+    }
+    else if (isLife && (cmd.name == "orient" || cmd.name == "orientation")) {
+        auto val = cmd.value.toLowerCase().trim();
+        bool horiz = (val == "h" || val == "horizontal" || val == "lr" || val == "left")
+                   ? true
+                   : (val == "v" || val == "vertical" || val == "tb" || val == "top")
+                   ? false
+                   : !processor.lifeSeqHorizParam->get(); // toggle
+        processor.lifeSeqHorizParam->setValueNotifyingHost(horiz ? 1.0f : 0.0f);
     }
     else if (isLife && cmd.name == "rule") {
         auto val = cmd.value.toLowerCase().trim();

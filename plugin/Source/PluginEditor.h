@@ -47,6 +47,23 @@ public:
     bool stampMode = false;
     int stampIndex = 0;    // index into builtInPatterns
     int stampCategory = 0; // current category index
+    int stampRotation = 0; // 0=0°, 1=90°CW, 2=180°, 3=270°CW
+
+    // Stamp rotation helpers
+    void stampDims(const orca::LifePattern& p, int& outW, int& outH) const {
+        outW = (stampRotation & 1) ? p.h : p.w;
+        outH = (stampRotation & 1) ? p.w : p.h;
+    }
+    char stampCell(const orca::LifePattern& p, int nx, int ny) const {
+        int sx, sy;
+        switch (stampRotation) {
+            case 1: sx = ny; sy = p.h - 1 - nx; break;
+            case 2: sx = p.w - 1 - nx; sy = p.h - 1 - ny; break;
+            case 3: sx = p.w - 1 - ny; sy = nx; break;
+            default: sx = nx; sy = ny; break;
+        }
+        return p.data[sx + p.w * sy];
+    }
 
     // Cursor
     int cursorX = 0, cursorY = 0;
