@@ -599,8 +599,10 @@ void OrcaProcessor::getStateInformation(juce::MemoryBlock& destData) {
 void OrcaProcessor::setStateInformation(const void* data, int sizeInBytes) {
     auto xml = getXmlFromBinary(data, sizeInBytes);
     if (xml && xml->hasTagName("OrcaState")) {
-        int w = xml->getIntAttribute("w", 25);
-        int h = xml->getIntAttribute("h", 25);
+        int w = juce::jlimit(1, orca::kMaxGridW,
+                             xml->getIntAttribute("w", 25));
+        int h = juce::jlimit(1, orca::kMaxGridH,
+                             xml->getIntAttribute("h", 25));
         int f = xml->getIntAttribute("f", 0);
         auto gridStr = xml->getStringAttribute("grid");
         {
@@ -608,8 +610,10 @@ void OrcaProcessor::setStateInformation(const void* data, int sizeInBytes) {
             engine.load(w, h, gridStr.toRawUTF8(), f);
 
             // Restore Life mode state
-            engine.paintChannel = static_cast<uint8_t>(xml->getIntAttribute("paintChannel", 0));
-            engine.paintOctave = static_cast<uint8_t>(xml->getIntAttribute("paintOctave", 3));
+            engine.paintChannel = static_cast<uint8_t>(juce::jlimit(
+                0, 15, xml->getIntAttribute("paintChannel", 0)));
+            engine.paintOctave = static_cast<uint8_t>(juce::jlimit(
+                0, 8, xml->getIntAttribute("paintOctave", 3)));
             if (xml->getIntAttribute("lifeMode", 0) == 1) {
                 engine.lifeMode = true;
                 engine.lifeGrid.resize(w, h);
@@ -622,8 +626,8 @@ void OrcaProcessor::setStateInformation(const void* data, int sizeInBytes) {
                             int cx = vals[0].getIntValue();
                             int cy = vals[1].getIntValue();
                             char note = vals[2][0];
-                            int ch = vals[3].getIntValue();
-                            int oct = vals[4].getIntValue();
+                            int ch = juce::jlimit(0, 15, vals[3].getIntValue());
+                            int oct = juce::jlimit(0, 8, vals[4].getIntValue());
                             int idx = engine.lifeGrid.indexAt(cx, cy);
                             if (idx >= 0) {
                                 engine.lifeGrid.cells[idx].note = note;
