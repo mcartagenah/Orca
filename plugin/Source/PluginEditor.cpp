@@ -34,10 +34,82 @@ GridComponent::~GridComponent() {
     delete[] lifeHistory;
 }
 
+int GridComponent::LifeRenderState::phaseForRow(int y) const {
+    if (seqMode == orca::LifeGrid::SeqOff || evolveRate <= 1 || wrapH <= 0) return 0;
+    int forwardPhase = y * evolveRate / wrapH;
+    switch (seqMode) {
+        case orca::LifeGrid::SeqForward: return forwardPhase;
+        case orca::LifeGrid::SeqReverse: return (evolveRate - 1) - forwardPhase;
+        case orca::LifeGrid::SeqMirror:
+            return mirrorForward ? forwardPhase : (evolveRate - 1) - forwardPhase;
+        case orca::LifeGrid::SeqRandom: return randomPhase[forwardPhase % evolveRate];
+        default: return 0;
+    }
+}
+
+juce::String GridComponent::LifeRenderState::chordDegreesString() const {
+    juce::String result;
+    for (int i = 0; i < chordDegreeCount; i++)
+        result += juce::String(chordDegrees[i] + 1);
+    return result;
+}
+
+void GridComponent::captureRenderState() {
+    const juce::SpinLock::ScopedLockType lock(processor.engineLock);
+    const auto& engine = processor.engine;
+    const auto& life = engine.lifeGrid;
+    int size = engine.shadowW * engine.shadowH;
+
+    memcpy(renderState.shadowCells, engine.shadowCells, size);
+    memcpy(renderState.shadowPorts, engine.shadowPorts, size);
+    memcpy(renderState.shadowPortOwner, engine.shadowPortOwner, size);
+    memcpy(renderState.shadowPortIdx, engine.shadowPortIdx, size);
+    memcpy(renderState.shadowLocks, engine.shadowLocks, size * sizeof(bool));
+    memcpy(renderState.shadowLife, engine.shadowLife, size * sizeof(orca::LifeCell));
+    renderState.shadowW = engine.shadowW;
+    renderState.shadowH = engine.shadowH;
+    renderState.shadowF = engine.shadowF;
+    renderState.lifeMode = engine.lifeMode;
+    renderState.paintChannel = engine.paintChannel;
+    renderState.paintOctave = engine.paintOctave;
+
+    auto& snapshot = renderState.lifeGrid;
+    snapshot.seqMode = life.seqMode;
+    snapshot.currentScale = life.currentScale;
+    snapshot.loopState = life.loopState;
+    snapshot.evolveRate = life.evolveRate;
+    snapshot.frameCounter = life.frameCounter;
+    snapshot.wrapH = life.wrapH;
+    snapshot.rootNote = life.rootNote;
+    snapshot.populationCount = life.population();
+    snapshot.minOctave = life.minOctave;
+    snapshot.maxOctave = life.maxOctave;
+    snapshot.minVelocity = life.minVelocity;
+    snapshot.minProb = life.minProb;
+    snapshot.maxNotes = life.maxNotes;
+    snapshot.dedupCC = life.dedupCC;
+    snapshot.microtuneAmount = life.microtuneAmount;
+    snapshot.loopHead = life.loopHead;
+    snapshot.loopLength = life.loopLength;
+    snapshot.loopRecorded = life.loopRecorded;
+    snapshot.chordDegreeCount = life.chordDegreeCount;
+    memcpy(snapshot.chordDegrees, life.chordDegrees, sizeof(snapshot.chordDegrees));
+    memcpy(snapshot.randomPhase, life.randomPhase, sizeof(snapshot.randomPhase));
+    snapshot.mirrorForward = life.mirrorForward;
+    snapshot.pulseMode = life.pulseMode;
+    snapshot.conductorMode = life.conductorMode;
+    snapshot.decay = life.decay;
+    snapshot.dedup = life.dedup;
+    snapshot.lockOctave = life.lockOctave;
+    snapshot.microtuning = life.microtuning;
+    memcpy(snapshot.ruleString, life.ruleString, sizeof(snapshot.ruleString));
+}
+
 void GridComponent::paint(juce::Graphics& g) {
     g.fillAll(bgColor);
 
-    auto& engine = processor.engine;
+    captureRenderState();
+    auto& engine = renderState;
     int gridW = engine.shadowW;
     int gridH = engine.shadowH;
 
@@ -437,8 +509,8 @@ void GridComponent::drawLifeCell(juce::Graphics& g, int x, int y,
     // Alive cell: color by channel hue, brightness by octave
     juce::Colour baseCol(channelColorValues[cell.channel % 16]);
     // minOctave = 30% brightness, maxOctave = 100%
-    float range = juce::jmax(1.0f, (float)(processor.engine.lifeGrid.maxOctave - processor.engine.lifeGrid.minOctave));
-    float brightness = 0.3f + ((cell.octave - processor.engine.lifeGrid.minOctave) / range) * 0.7f;
+    float range = juce::jmax(1.0f, (float)(renderState.lifeGrid.maxOctave - renderState.lifeGrid.minOctave));
+    float brightness = 0.3f + ((cell.octave - renderState.lifeGrid.minOctave) / range) * 0.7f;
     juce::Colour col = baseCol.withMultipliedBrightness(brightness);
 
     g.setColour(col);

@@ -106,6 +106,44 @@ public:
 private:
     OrcaProcessor& processor;
 
+    struct LifeRenderState {
+        orca::LifeGrid::SeqMode seqMode = orca::LifeGrid::SeqOff;
+        orca::LifeGrid::ScaleType currentScale = orca::LifeGrid::Chromatic;
+        orca::LifeGrid::LoopState loopState = orca::LifeGrid::LoopOff;
+        int evolveRate = 1, frameCounter = 0, wrapH = 1;
+        int rootNote = 0, populationCount = 0;
+        int minOctave = 0, maxOctave = 7;
+        int minProb = 10, maxNotes = 0, dedupCC = -1;
+        int microtuneAmount = 50, loopHead = 0, loopLength = 0, loopRecorded = 0;
+        int chordDegreeCount = 0;
+        int chordDegrees[7] = {};
+        int randomPhase[512] = {};
+        bool mirrorForward = true, pulseMode = true, conductorMode = false;
+        bool decay = false, dedup = false, lockOctave = false, microtuning = false;
+        uint8_t minVelocity = 40;
+        char ruleString[16] = "23/3";
+
+        int phaseForRow(int y) const;
+        int population() const { return populationCount; }
+        juce::String chordDegreesString() const;
+    };
+
+    struct RenderState {
+        char shadowCells[orca::kMaxGridSize] = {};
+        uint8_t shadowPorts[orca::kMaxGridSize] = {};
+        char shadowPortOwner[orca::kMaxGridSize] = {};
+        uint8_t shadowPortIdx[orca::kMaxGridSize] = {};
+        bool shadowLocks[orca::kMaxGridSize] = {};
+        orca::LifeCell shadowLife[orca::kMaxGridSize];
+        int shadowW = 0, shadowH = 0, shadowF = 0;
+        bool lifeMode = false;
+        uint8_t paintChannel = 0, paintOctave = 3;
+        LifeRenderState lifeGrid;
+    };
+
+    RenderState renderState;
+    void captureRenderState();
+
     float fontSize = 12.0f;
     float tileW = 10.0f;
     float tileH = 15.0f;

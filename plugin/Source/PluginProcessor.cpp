@@ -542,6 +542,7 @@ juce::AudioProcessorEditor* OrcaProcessor::createEditor() {
 bool OrcaProcessor::hasEditor() const { return true; }
 
 void OrcaProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    const juce::SpinLock::ScopedLockType lock(engineLock);
     auto xml = std::make_unique<juce::XmlElement>("OrcaState");
     xml->setAttribute("w", engine.grid.w);
     xml->setAttribute("h", engine.grid.h);
