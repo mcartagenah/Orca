@@ -28,18 +28,6 @@ void GridComponent::visibilityChanged() {
         grabKeyboardFocus();
 }
 
-void GridComponent::restoreKeyboardFocusAsync() {
-    juce::Component::SafePointer<GridComponent> safeThis(this);
-    juce::Timer::callAfterDelay(100, [safeThis] {
-        if (safeThis == nullptr)
-            return;
-
-        if (auto* peer = safeThis->getPeer())
-            peer->grabFocus();
-        safeThis->grabKeyboardFocus();
-    });
-}
-
 GridComponent::~GridComponent() {
     stopTimer();
     fileChooser.reset();
@@ -1152,7 +1140,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     if (cmd && !shift && code == 'L') {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Import modules", currentFile.existsAsFile() ? currentFile.getParentDirectory() : juce::File(),
-            "*.orca;*.life");
+            "*.orca;*.life", false, false, this);
         fileChooser->launchAsync(
             juce::FileBrowserComponent::openMode
             | juce::FileBrowserComponent::canSelectFiles
@@ -1166,7 +1154,6 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
                     if (content.isNotEmpty())
                         injectCache[name] = content;
                 }
-                restoreKeyboardFocusAsync();
             });
         return true;
     }
@@ -1174,7 +1161,7 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
     // Cmd+O: open .orca or .life file
     if (cmd && code == 'O') {
         fileChooser = std::make_unique<juce::FileChooser>(
-            "Open file", juce::File(), "*.orca;*.life");
+            "Open file", juce::File(), "*.orca;*.life", false, false, this);
         fileChooser->launchAsync(juce::FileBrowserComponent::openMode
                                  | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
@@ -1185,7 +1172,6 @@ bool GridComponent::keyPressed(const juce::KeyPress& key) {
                     else if (result.hasFileExtension("life"))
                         loadLifeFile(result);
                 }
-                restoreKeyboardFocusAsync();
             });
         return true;
     }
@@ -1621,7 +1607,8 @@ void GridComponent::saveAs() {
     auto ext = isLife ? "*.life" : "*.orca";
     auto title = isLife ? "Save .life file" : "Save .orca file";
     fileChooser = std::make_unique<juce::FileChooser>(
-        title, currentFile.existsAsFile() ? currentFile : juce::File(), ext);
+        title, currentFile.existsAsFile() ? currentFile : juce::File(), ext,
+        false, false, this);
     fileChooser->launchAsync(juce::FileBrowserComponent::saveMode
                              | juce::FileBrowserComponent::canSelectFiles,
         [this, isLife](const juce::FileChooser& fc) {
@@ -1632,7 +1619,6 @@ void GridComponent::saveAs() {
                 else
                     saveOrcaFile(result.withFileExtension("orca"));
             }
-            restoreKeyboardFocusAsync();
         });
 }
 
