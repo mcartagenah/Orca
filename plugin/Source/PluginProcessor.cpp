@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include <mach/mach_time.h>
+#if JUCE_MAC
+ #include <mach/mach_time.h>
+#endif
 
 juce::AudioProcessorValueTreeState::ParameterLayout OrcaProcessor::createParameterLayout() {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -85,7 +87,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrcaProcessor::createParamet
 
 OrcaProcessor::OrcaProcessor()
     : AudioProcessor(BusesProperties()
-                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+#if ! JucePlugin_IsMidiEffect
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+#endif
+                     ),
       apvts(*this, nullptr, "Parameters", createParameterLayout())
 {
     engine.reset(25, 25);
@@ -114,12 +119,15 @@ OrcaProcessor::OrcaProcessor()
     lifeMicrotuneParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("life_microtune"));
     lifeMicrotuneAmtParam = dynamic_cast<juce::AudioParameterInt*>(apvts.getParameter("life_microtune_amt"));
 
-    // Create virtual MIDI port via CoreMIDI C API (bypasses JUCE's broken singleton)
+    // Preserve the existing system-wide virtual MIDI source on macOS. AUv3
+    // uses the MidiBuffer returned to its host and does not create this port.
+#if JUCE_MAC
     midiClient = 0;
     midiEndpoint = 0;
     OSStatus status = MIDIClientCreate(CFSTR("OrcaPlugin"), nullptr, nullptr, &midiClient);
     if (status == noErr)
         MIDISourceCreate(midiClient, CFSTR("Orca"), &midiEndpoint);
+#endif
 }
 
 int OrcaProcessor::findChordPresetIndex(const juce::String& degrees) const {
@@ -180,10 +188,12 @@ OrcaProcessor::~OrcaProcessor() {
     oscSender.reset();
     udpSocket.reset();
 
+#if JUCE_MAC
     if (midiEndpoint) MIDIEndpointDispose(midiEndpoint);
     if (midiClient)   MIDIClientDispose(midiClient);
     midiEndpoint = 0;
     midiClient = 0;
+#endif
 }
 
 void OrcaProcessor::setupUdpSocket() {
@@ -193,6 +203,7 @@ void OrcaProcessor::setupUdpSocket() {
 }
 
 void OrcaProcessor::sendMidiToVirtualPort(const uint8_t* data, int numBytes) {
+#if JUCE_MAC
     if (!midiEndpoint || numBytes <= 0) return;
 
     MIDIPacketList packetList;
@@ -201,6 +212,9 @@ void OrcaProcessor::sendMidiToVirtualPort(const uint8_t* data, int numBytes) {
                                mach_absolute_time(), numBytes, data);
     if (packet)
         MIDIReceived(midiEndpoint, &packetList);
+#else
+    juce::ignoreUnused(data, numBytes);
+#endif
 }
 
 void OrcaProcessor::setGroove(const double* ratios, int count) {
@@ -213,7 +227,7 @@ void OrcaProcessor::setGroove(const double* ratios, int count) {
 const juce::String OrcaProcessor::getName() const { return JucePlugin_Name; }
 bool OrcaProcessor::acceptsMidi() const { return true; }
 bool OrcaProcessor::producesMidi() const { return true; }
-bool OrcaProcessor::isMidiEffect() const { return false; }
+bool OrcaProcessor::isMidiEffect() const { return JucePlugin_IsMidiEffect; }
 double OrcaProcessor::getTailLengthSeconds() const { return 0.0; }
 int OrcaProcessor::getNumPrograms() { return 1; }
 int OrcaProcessor::getCurrentProgram() { return 0; }
@@ -230,7 +244,12 @@ void OrcaProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 void OrcaProcessor::releaseResources() {}
 
 bool OrcaProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+#if JucePlugin_IsMidiEffect
+    juce::ignoreUnused(layouts);
+    return true;
+#else
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+#endif
 }
 
 void OrcaProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {

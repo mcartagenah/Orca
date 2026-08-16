@@ -6,18 +6,46 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(JUCE)
 
+# Keep the existing desktop plug-ins unchanged. On iOS, build a MIDI-processing
+# AUv3 and a containing standalone app; JUCE embeds the AUv3 in the app target.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+        message(FATAL_ERROR "The iOS AUv3 build requires the Xcode generator")
+    endif()
+
+    set(ORCA_PLUGIN_FORMATS AUv3 Standalone)
+    set(ORCA_IS_SYNTH FALSE)
+    set(ORCA_IS_MIDI_EFFECT TRUE)
+    set(ORCA_AU_MAIN_TYPE kAudioUnitType_MIDIProcessor)
+else()
+    set(ORCA_PLUGIN_FORMATS AU VST3 Standalone)
+    set(ORCA_IS_SYNTH TRUE)
+    set(ORCA_IS_MIDI_EFFECT FALSE)
+    set(ORCA_AU_MAIN_TYPE kAudioUnitType_MusicDevice)
+endif()
+
 juce_add_plugin(OrcaPlugin
     COMPANY_NAME "Orca"
-    IS_SYNTH TRUE
+    IS_SYNTH ${ORCA_IS_SYNTH}
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
-    IS_MIDI_EFFECT FALSE
+    IS_MIDI_EFFECT ${ORCA_IS_MIDI_EFFECT}
     PLUGIN_MANUFACTURER_CODE Orca
     PLUGIN_CODE Orka
-    FORMATS AU VST3 Standalone
+    FORMATS ${ORCA_PLUGIN_FORMATS}
     PRODUCT_NAME "Orca"
     BUNDLE_ID "com.orca.plugin"
-    AU_MAIN_TYPE "kAudioUnitType_MusicDevice"
+    AU_MAIN_TYPE ${ORCA_AU_MAIN_TYPE}
+    IPHONE_SCREEN_ORIENTATIONS
+        UIInterfaceOrientationPortrait
+        UIInterfaceOrientationPortraitUpsideDown
+        UIInterfaceOrientationLandscapeLeft
+        UIInterfaceOrientationLandscapeRight
+    IPAD_SCREEN_ORIENTATIONS
+        UIInterfaceOrientationPortrait
+        UIInterfaceOrientationPortraitUpsideDown
+        UIInterfaceOrientationLandscapeLeft
+        UIInterfaceOrientationLandscapeRight
 )
 
 target_sources(OrcaPlugin
@@ -49,7 +77,6 @@ target_compile_definitions(OrcaPlugin
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
 find_library(COREMIDI_FRAMEWORK CoreMIDI)

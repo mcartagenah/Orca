@@ -3,7 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_osc/juce_osc.h>
 #include <atomic>
-#include <CoreMIDI/CoreMIDI.h>
+#if JUCE_MAC
+ #include <CoreMIDI/CoreMIDI.h>
+#endif
 #include "engine/Engine.h"
 
 class OrcaProcessor : public juce::AudioProcessor {
@@ -69,9 +71,12 @@ public:
 
     float lastShuffleValue = 100.0f;
 
-    // Virtual MIDI output via CoreMIDI (bypasses JUCE's broken singleton)
+    // The system-wide virtual MIDI source is a macOS-only companion to the
+    // host MIDI bus. AUv3 emits through the host MIDI bus instead.
+#if JUCE_MAC
     MIDIClientRef midiClient = 0;
     MIDIEndpointRef midiEndpoint = 0;
+#endif
     void sendMidiToVirtualPort(const uint8_t* data, int numBytes);
 
     // Debug: count MIDI events for UI display
