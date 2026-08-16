@@ -98,6 +98,25 @@ make -C plugin all
 
 `make all` replaces existing Orca bundles in `~/Library/Audio/Plug-Ins/Components/` and `~/Library/Audio/Plug-Ins/VST3/`. Build with CMake first if you do not want to modify installed plugins. The standalone app can be run from `plugin/build/OrcaPlugin_artefacts/Release/Standalone/Orca.app`.
 
+### iPad AUv3 prototype
+
+The iOS build generates a MIDI-processing AUv3 and a containing standalone app. It requires the full Xcode application, not only Xcode Command Line Tools:
+
+```sh
+cmake -S plugin -B plugin/build-ios -G Xcode \
+  -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+cmake --build plugin/build-ios --config Debug --target OrcaPlugin_Standalone -- \
+  -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO
+open plugin/build-ios/OrcaPlugin.xcodeproj
+```
+
+If Xcode reports that the iOS platform is not installed, install its matching simulator runtime with `xcodebuild -downloadPlatform iOS` and retry the build. For a physical iPad, select your development team in Xcode or reconfigure with `-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=YOUR_TEAM_ID` before building.
+
+Select an iPad or iPad Simulator in Xcode and build the `OrcaPlugin_Standalone` target. JUCE embeds `OrcaPlugin_AUv3` in that containing app. The AUv3 sends MIDI through its host bus and does not create the system-wide virtual MIDI source; the existing macOS AU, VST3, and Standalone builds retain that virtual source and their existing Music Device classification.
+
+This is an initial platform target, not yet a finished iPad release. The editor remains keyboard-first, and touch controls, native document access, signing identifiers, privacy declarations, and App Store assets still need to be completed and tested on a physical iPad.
+
 ## Plugin usage
 
 The plugin is a silent Music Device: it generates MIDI but does not synthesize audio. Load it before an instrument in a MIDI-capable track, or route the system-wide virtual MIDI source named `Orca` to another application.
