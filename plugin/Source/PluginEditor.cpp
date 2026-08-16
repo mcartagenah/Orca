@@ -257,7 +257,7 @@ void GridComponent::paint(juce::Graphics& g) {
 
         // Measure text widths to position cursor
         auto font = g.getCurrentFont();
-        float beforeW = font.getStringWidthFloat(before);
+        float beforeW = juce::GlyphArrangement::getStringWidth(font, before);
         float cursorX = 4.0f + beforeW;
 
         // Draw full text
